@@ -24,15 +24,15 @@ replace (
 	k8s.io/legacy-cloud-providers => k8s.io/legacy-cloud-providers v0.19.7
 	k8s.io/metrics => k8s.io/metrics v0.19.7
 	k8s.io/sample-apiserver => k8s.io/sample-apiserver v0.19.7
-	sigs.k8s.io/controller-runtime => sigs.k8s.io/controller-runtime v0.7.2
 )
 
 require (
 	github.com/spf13/cobra v1.1.3
 	github.com/spf13/pflag v1.0.5
-	k8s.io/api v0.19.7
-	k8s.io/apimachinery v0.19.7
-	k8s.io/cli-runtime v0.0.0-00010101000000-000000000000
-	k8s.io/client-go v0.19.7
-	sigs.k8s.io/controller-runtime v0.0.0-00010101000000-000000000000
+	k8s.io/api v0.20.2
+	k8s.io/apimachinery v0.20.2
+	k8s.io/cli-runtime v0.19.7
+	k8s.io/client-go v0.20.2
+	k8s.io/kubectl v0.0.0-20210209134520-b3a0f34fb762
+	sigs.k8s.io/controller-runtime v0.8.2
 )
