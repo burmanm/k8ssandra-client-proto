@@ -16,6 +16,8 @@
 	repair <cluster>				=> repair cluster X now
 	get all							=> get all k8ssandra resources (more than kubectl get all)
 
+	components						=> install, list, uninstall current components (stargate, reaper, medusa..)
+
 	*
 		* backup list <cluster>
 		* backup create <cluster>

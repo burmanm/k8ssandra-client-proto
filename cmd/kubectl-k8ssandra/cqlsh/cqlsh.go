@@ -3,8 +3,10 @@ package cqlsh
 import (
 	"fmt"
 
+	"github.com/burmanm/k8ssandra-client/pkg/util"
 	"github.com/spf13/cobra"
 	"k8s.io/cli-runtime/pkg/genericclioptions"
+	"k8s.io/kubectl/pkg/cmd/exec"
 )
 
 var (
@@ -18,8 +20,7 @@ var (
 type options struct {
 	configFlags *genericclioptions.ConfigFlags
 	genericclioptions.IOStreams
-	namespace string
-	podName   string
+	execOptions *exec.ExecOptions
 }
 
 func newOptions(streams genericclioptions.IOStreams) *options {
@@ -62,25 +63,26 @@ func NewCmd(streams genericclioptions.IOStreams) *cobra.Command {
 func (c *options) Complete(cmd *cobra.Command, args []string) error {
 	var err error
 
-	c.namespace, err = cmd.Flags().GetString("namespace")
+	if len(args) < 1 {
+		return errNoPodDefined
+	}
+
+	execOptions, err := util.GetExecOptions(c.IOStreams, c.configFlags)
 	if err != nil {
 		return err
 	}
+	c.execOptions = execOptions
+	execOptions.PodName = args[0]
+	execOptions.Stdin = true
+	execOptions.TTY = true
 
-	if len(args) > 0 {
-		// We just ignore if there's more than 1 pod parameter
-		c.podName = args[0]
-	}
+	// Needs secrets and commandLine
 
 	return nil
 }
 
 // Validate ensures that all required arguments and flag values are provided
 func (c *options) Validate() error {
-	if c.podName == "" {
-		return errNoPodDefined
-	}
-
 	return nil
 }
 

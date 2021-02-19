@@ -1,17 +1,13 @@
 package nodetool
 
 import (
-	"context"
 	"fmt"
 
+	"github.com/burmanm/k8ssandra-client/pkg/util"
 	"github.com/spf13/cobra"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/cli-runtime/pkg/genericclioptions"
 	"k8s.io/client-go/kubernetes"
-	"k8s.io/client-go/rest"
 	"k8s.io/kubectl/pkg/cmd/exec"
-	"k8s.io/kubectl/pkg/scheme"
 )
 
 var (
@@ -23,14 +19,9 @@ var (
 )
 
 type options struct {
-	namespace   string
 	configFlags *genericclioptions.ConfigFlags
 	genericclioptions.IOStreams
-	podName     string
-	nodeCommand string
-	args        []string
 	execOptions *exec.ExecOptions
-	restConfig  *rest.Config
 }
 
 func newOptions(streams genericclioptions.IOStreams) *options {
@@ -68,23 +59,6 @@ func NewCmd(streams genericclioptions.IOStreams) *cobra.Command {
 	return cmd
 }
 
-// setKubernetesDefaults hack is copied from kubectl/exec (unexported)
-func setKubernetesDefaults(config *rest.Config) error {
-	// TODO remove this hack.  This is allowing the GetOptions to be serialized.
-	config.GroupVersion = &schema.GroupVersion{Group: "", Version: "v1"}
-
-	if config.APIPath == "" {
-		config.APIPath = "/api"
-	}
-	if config.NegotiatedSerializer == nil {
-		// This codec factory ensures the resources are not converted. Therefore, resources
-		// will not be round-tripped through internal versions. Defaulting does not happen
-		// on the client.
-		config.NegotiatedSerializer = scheme.Codecs.WithoutConversion()
-	}
-	return rest.SetKubernetesDefaults(config)
-}
-
 // Complete parses the arguments and necessary flags to options
 func (c *options) Complete(cmd *cobra.Command, args []string) error {
 	var err error
@@ -93,57 +67,23 @@ func (c *options) Complete(cmd *cobra.Command, args []string) error {
 		return errNotEnoughParameters
 	}
 
-	c.nodeCommand = args[1]
-	if len(args) > 2 {
-		c.args = args[2:]
+	execOptions, err := util.GetExecOptions(c.IOStreams, c.configFlags)
+	if err != nil {
+		return err
 	}
-
-	execOptions := &exec.ExecOptions{
-		StreamOptions: exec.StreamOptions{
-			IOStreams: c.IOStreams,
-		},
-
-		Executor: &exec.DefaultRemoteExecutor{},
-	}
-
+	c.execOptions = execOptions
 	execOptions.PodName = args[0]
 
-	execOptions.Namespace, execOptions.EnforceNamespace, err = c.configFlags.ToRawKubeConfigLoader().Namespace()
-	if err != nil {
-		return err
-	}
-	c.namespace = execOptions.Namespace
-
-	execOptions.ContainerName = "cassandra"
-
-	// execOptions.GetPodTimeout, err = cmdutil.GetPodRunningTimeoutFlag(cmd)
-	// if err != nil {
-	// 	return err
-	// }
-
-	c.restConfig, err = c.configFlags.ToRESTConfig()
-	if err != nil {
-		return err
-	}
-
-	// Hack from kubectl's exec. Probably a bug in the Kubernetes' client implementation
-	setKubernetesDefaults(c.restConfig)
-	execOptions.Config = c.restConfig
-
+	// TODO This userNamePassword processing should be modified .. as well as the whole command creation to external pkg
 	clientset, err := kubernetes.NewForConfig(execOptions.Config)
 	if err != nil {
 		return err
 	}
-	execOptions.PodClient = clientset.CoreV1()
 
-	c.execOptions = execOptions
-
-	// Create the correct command line here
-
-	user, pass, _ := c.getUserNamePassword()
-	execOptions.Command = []string{"nodetool", "--username", user, "--password", pass, c.nodeCommand}
-	if len(c.args) > 0 {
-		execOptions.Command = append(execOptions.Command, c.args...)
+	user, pass, _ := util.GetJmxUserNamePassword(clientset.CoreV1(), execOptions.Namespace, "demo")
+	execOptions.Command = []string{"nodetool", "--username", user, "--password", pass, args[1]}
+	if len(args) > 2 {
+		execOptions.Command = append(execOptions.Command, args[2:]...)
 	}
 
 	return nil
@@ -156,36 +96,7 @@ func (c *options) Validate() error {
 	return nil
 }
 
-func (c *options) getUserNamePassword() (string, string, error) {
-	// TODO Could be a util .. I guess I'll use this often - move also a lot of the logic to the pkg
-	clientset, err := kubernetes.NewForConfig(c.restConfig)
-	if err != nil {
-		return "", "", err
-	}
-
-	// TODO Hack for now, this requires a patch in k8ssandra
-	secret, err := clientset.CoreV1().Secrets(c.namespace).Get(context.TODO(), "demo-reaper-secret-k8ssandra", metav1.GetOptions{})
-	if err != nil {
-		return "", "", err
-	}
-
-	user := secret.Data["username"]
-	pass := secret.Data["password"]
-
-	return string(user), string(pass), nil
-}
-
 // Run triggers the nodetool command on target pod
 func (c *options) Run() error {
-
-	// TODO Set container to "cassandra", (-c cassandra)
-	// kubectl exec pod -c cassandra ..
-	// -- command part should be the after nodetool part
-
-	err := c.execOptions.Run()
-	if err != nil {
-		return err
-	}
-
-	return nil
+	return c.execOptions.Run()
 }
