@@ -77,6 +77,14 @@ func (c *options) Complete(cmd *cobra.Command, args []string) error {
 	execOptions.TTY = true
 
 	// Needs secrets and commandLine
+	cassSecret, err := util.GetCassandraSuperuserSecrets(execOptions.PodName, execOptions.Namespace)
+	if err != nil {
+		return err
+	}
+	execOptions.Command = []string{"cqlsh", "--username", cassSecret.Username, "--password", cassSecret.Password}
+	if len(args) > 1 {
+		execOptions.Command = append(execOptions.Command, args[1:]...)
+	}
 
 	return nil
 }
@@ -88,5 +96,5 @@ func (c *options) Validate() error {
 
 // Run starts an interactive cqlsh shell on target pod
 func (c *options) Run() error {
-	return nil
+	return c.execOptions.Run()
 }

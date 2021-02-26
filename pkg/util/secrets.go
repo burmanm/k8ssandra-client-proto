@@ -2,51 +2,49 @@ package util
 
 import (
 	"context"
+	"fmt"
 
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	coreclient "k8s.io/client-go/kubernetes/typed/core/v1"
+	"github.com/burmanm/k8ssandra-client/pkg/cassdcutil"
+	cassdcapi "github.com/datastax/cass-operator/operator/pkg/apis/cassandra/v1beta1"
+	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/types"
 )
 
 type CassandraPodSecrets struct {
-	CassandraSuperuserSecret string
-	CassandraJMXSecret       string
+	Username string
+	Password string
 }
 
-func GetCassandraSuperuserNameAndPassword(secretClient coreclient.SecretsGetter, namespace, releaseName string) (string, string, error) {
-	secret, err := secretClient.Secrets(namespace).Get(context.TODO(), "demo-reaper-secret-k8ssandra", metav1.GetOptions{})
+func GetCassandraSuperuserSecrets(podName, namespace string) (*CassandraPodSecrets, error) {
+	c, err := cassdcutil.GetClient()
 	if err != nil {
-		return "", "", err
+		return nil, err
 	}
 
-	user := secret.Data["username"]
-	pass := secret.Data["password"]
-
-	return string(user), string(pass), nil
-}
-
-func GetJmxUserNamePassword(secretClient coreclient.SecretsGetter, namespace, releaseName string) (string, string, error) {
-	// TODO Hack for now, this requires a patch in k8ssandra
-	secret, err := secretClient.Secrets(namespace).Get(context.TODO(), "demo-reaper-secret-k8ssandra", metav1.GetOptions{})
+	key := types.NamespacedName{Namespace: namespace, Name: podName}
+	pod := &corev1.Pod{}
+	err = c.Get(context.TODO(), key, pod)
 	if err != nil {
-		return "", "", err
+		return nil, err
 	}
 
-	user := secret.Data["username"]
-	pass := secret.Data["password"]
+	if dc, found := pod.Labels[cassdcapi.DatacenterLabel]; !found {
+		return nil, fmt.Errorf("Target pod not managed by k8ssandra, no datacenter label")
+	} else {
+		// Get CassandraDatacenter for the dc
+		cassDcKey := types.NamespacedName{Namespace: namespace, Name: dc}
+		cassdc := &cassdcapi.CassandraDatacenter{}
+		err = c.Get(context.TODO(), cassDcKey, cassdc)
+		if err != nil {
+			return nil, err
+		}
 
-	return string(user), string(pass), nil
-}
+		secret := &corev1.Secret{}
+		err = c.Get(context.TODO(), cassdc.GetSuperuserSecretNamespacedName(), secret)
 
-func GetPodSecrets(podClient coreclient.PodsGetter, podName string) (*CassandraPodSecrets, error) {
-	// "cassandra.datastax.com/datacenter" from the pod
-	// from that, get "cassdc <labelvalue>"
-	// check if managed by helm - if not, an error..
-
-	// helm secret: sh.helm.release.v1.demo.v1
-	// after upgrade:
-	// sh.helm.release.v1.demo.v2
-	// etc
-
-	// func (dc *CassandraDatacenter) GetSuperuserSecretNamespacedName() types.NamespacedName {
-	return nil, nil
+		return &CassandraPodSecrets{
+			Username: string(secret.Data["username"]),
+			Password: string(secret.Data["password"]),
+		}, nil
+	}
 }

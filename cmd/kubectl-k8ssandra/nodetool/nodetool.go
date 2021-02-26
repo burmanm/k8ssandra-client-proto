@@ -6,7 +6,6 @@ import (
 	"github.com/burmanm/k8ssandra-client/pkg/util"
 	"github.com/spf13/cobra"
 	"k8s.io/cli-runtime/pkg/genericclioptions"
-	"k8s.io/client-go/kubernetes"
 	"k8s.io/kubectl/pkg/cmd/exec"
 )
 
@@ -75,13 +74,16 @@ func (c *options) Complete(cmd *cobra.Command, args []string) error {
 	execOptions.PodName = args[0]
 
 	// TODO This userNamePassword processing should be modified .. as well as the whole command creation to external pkg
-	clientset, err := kubernetes.NewForConfig(execOptions.Config)
+	// clientset, err := kubernetes.NewForConfig(execOptions.Config)
+	// if err != nil {
+	// 	return err
+	// }
+
+	cassSecret, err := util.GetCassandraSuperuserSecrets(execOptions.PodName, execOptions.Namespace)
 	if err != nil {
 		return err
 	}
-
-	user, pass, _ := util.GetJmxUserNamePassword(clientset.CoreV1(), execOptions.Namespace, "demo")
-	execOptions.Command = []string{"nodetool", "--username", user, "--password", pass, args[1]}
+	execOptions.Command = []string{"nodetool", "--username", cassSecret.Username, "--password", cassSecret.Password, args[1]}
 	if len(args) > 2 {
 		execOptions.Command = append(execOptions.Command, args[2:]...)
 	}
