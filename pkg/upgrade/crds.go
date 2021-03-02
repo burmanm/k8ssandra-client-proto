@@ -35,12 +35,16 @@ func NewWithClient(c client.Client) (*Upgrader, error) {
 }
 
 // New returns a new Upgrader client
-func New() (*Upgrader, error) {
+func New(namespace string) (*Upgrader, error) {
 	_ = api.AddToScheme(scheme.Scheme)
 	c, err := client.New(ctrl.GetConfigOrDie(), client.Options{Scheme: scheme.Scheme})
 	if err != nil {
 		log.Fatal(err)
 		return nil, err
+	}
+
+	if namespace != "" {
+		c = client.NewNamespacedClient(c, namespace)
 	}
 
 	return &Upgrader{

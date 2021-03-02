@@ -1,22 +1,21 @@
 /*
-	// TODO As kubectl plugin, we also need context and namespace (from the kubectl command itself..)
-
 	kubectl k8ssandra command <node>/<cluster>/<release> <parameters>
 	If no node / cluster / release is required, then the parameters is after command
 
 	command selection, such as:
-	remove <release> 				=> uninstall CassandraDatacenter for release X, but nothing else (cleaner)
+	remove <release> 				=> uninstall CassandraDatacenter (+ finalizers, + unused secrets?) for release X, but nothing else (cleaner)
 	shutdown <cluster>				=> shutdown cluster X (but do not delete it)
 	start <cluster>					=> resume operation of shutdown cluster
-	nodetool <node>					=> use nodetool on node X
+	*nodetool <node>					=> use nodetool on node X
 	restart <cluster>				=> issue rolling restart for cluster X
-	cqlsh <node>					=> exec cqlsh in the node
+	*cqlsh <node>					=> exec cqlsh in the node
 	backup 							=> fetch backup information? *
 	restore <cluster> <backup>		=> initiate a restore of cluster X to a version Y. What about to a new cluster?
 	repair <cluster>				=> repair cluster X now
 	get all							=> get all k8ssandra resources (more than kubectl get all)
+	upgradecrds						=> upgrade installed CRDs to the newest versions from k8ssandra
 
-	components						=> install, list, uninstall current components (stargate, reaper, medusa..)
+	components						=> install, list, uninstall, edit current components (stargate, reaper, medusa..)
 
 	*
 		* backup list <cluster>

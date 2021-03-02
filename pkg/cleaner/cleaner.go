@@ -33,6 +33,9 @@ func New(namespace string) (*Agent, error) {
 		log.Fatal(err)
 	}
 
+	// Ensure all operations are targeting a single namespace
+	c = client.NewNamespacedClient(c, namespace)
+
 	return &Agent{
 		Client:    c,
 		Namespace: namespace,

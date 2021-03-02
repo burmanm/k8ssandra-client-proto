@@ -1,26 +1,29 @@
-package nodetool
+package crds
 
 import (
 	"fmt"
 
-	"github.com/burmanm/k8ssandra-client/pkg/util"
+	"github.com/burmanm/k8ssandra-client/pkg/upgrade"
 	"github.com/spf13/cobra"
 	"k8s.io/cli-runtime/pkg/genericclioptions"
 	"k8s.io/kubectl/pkg/cmd/exec"
 )
 
 var (
-	cqlshExample = `
-	# launch a interactive cqlsh shell on node
-	%[1]s nodetool <pod> <command> [<args>]
-`
+	upgraderExample = `
+	# update CRDs in the namespace to targetVersion
+	%[1]s upgradecrds <targetVersion> [<args>]
+
+	`
 	errNotEnoughParameters = fmt.Errorf("not enough parameters to run nodetool")
 )
 
 type options struct {
 	configFlags *genericclioptions.ConfigFlags
 	genericclioptions.IOStreams
-	execOptions *exec.ExecOptions
+	execOptions   *exec.ExecOptions
+	targetVersion string
+	namespace     string
 }
 
 func newOptions(streams genericclioptions.IOStreams) *options {
@@ -35,9 +38,9 @@ func NewCmd(streams genericclioptions.IOStreams) *cobra.Command {
 	o := newOptions(streams)
 
 	cmd := &cobra.Command{
-		Use:          "nodetool [pod] [flags]",
-		Short:        "nodetool launched on pod",
-		Example:      fmt.Sprintf(cqlshExample, "kubectl k8ssandra"),
+		Use:          "upgradecrds <targetVersion> [flags]",
+		Short:        "upgrade k8ssandra CRDs to target release version",
+		Example:      fmt.Sprintf(upgraderExample, "kubectl k8ssandra"),
 		SilenceUsage: true,
 		RunE: func(c *cobra.Command, args []string) error {
 			if err := o.Complete(c, args); err != nil {
@@ -61,38 +64,27 @@ func NewCmd(streams genericclioptions.IOStreams) *cobra.Command {
 // Complete parses the arguments and necessary flags to options
 func (c *options) Complete(cmd *cobra.Command, args []string) error {
 	var err error
-
-	if len(args) < 2 {
+	if len(args) < 0 {
 		return errNotEnoughParameters
 	}
 
-	execOptions, err := util.GetExecOptions(c.IOStreams, c.configFlags)
-	if err != nil {
-		return err
-	}
-	c.execOptions = execOptions
-	execOptions.PodName = args[0]
-
-	cassSecret, err := util.GetCassandraSuperuserSecrets(execOptions.PodName, execOptions.Namespace)
-	if err != nil {
-		return err
-	}
-	execOptions.Command = []string{"nodetool", "--username", cassSecret.Username, "--password", cassSecret.Password, args[1]}
-	if len(args) > 2 {
-		execOptions.Command = append(execOptions.Command, args[2:]...)
-	}
-
-	return nil
+	c.targetVersion = args[0]
+	c.namespace, _, err = c.configFlags.ToRawKubeConfigLoader().Namespace()
+	return err
 }
 
 // Validate ensures that all required arguments and flag values are provided
 func (c *options) Validate() error {
-	// We could validate here if a nodetool command requires flags, but lets let nodetool throw that error
-
+	// TODO Validate that the targetVersion is valid
 	return nil
 }
 
-// Run triggers the nodetool command on target pod
+// Run removes the finalizers for a release X in the given namespace
 func (c *options) Run() error {
-	return c.execOptions.Run()
+	upgrader, err := upgrade.New(c.namespace)
+	if err != nil {
+		return err
+	}
+
+	return upgrader.Upgrade(c.targetVersion)
 }
