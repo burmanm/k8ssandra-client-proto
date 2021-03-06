@@ -4,6 +4,7 @@ import (
 	"github.com/burmanm/k8ssandra-client/cmd/kubectl-k8ssandra/cleaner"
 	"github.com/burmanm/k8ssandra-client/cmd/kubectl-k8ssandra/cqlsh"
 	"github.com/burmanm/k8ssandra-client/cmd/kubectl-k8ssandra/crds"
+	"github.com/burmanm/k8ssandra-client/cmd/kubectl-k8ssandra/edit"
 	"github.com/burmanm/k8ssandra-client/cmd/kubectl-k8ssandra/nodetool"
 
 	"github.com/spf13/cobra"
@@ -36,6 +37,7 @@ func NewCmd(streams genericclioptions.IOStreams) *cobra.Command {
 	cmd.AddCommand(cqlsh.NewCmd(streams))
 	cmd.AddCommand(cleaner.NewCmd(streams))
 	cmd.AddCommand(crds.NewCmd(streams))
+	cmd.AddCommand(edit.NewCmd(streams))
 
 	// cmd.Flags().BoolVar(&o.listNamespaces, "list", o.listNamespaces, "if true, print the list of all namespaces in the current KUBECONFIG")
 	o.configFlags.AddFlags(cmd.Flags())

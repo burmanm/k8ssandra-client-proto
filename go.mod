@@ -3,8 +3,7 @@ module github.com/burmanm/k8ssandra-client
 go 1.15
 
 replace (
-	github.com/datastax/cass-operator => /home/michael/projects/git/datastax/cass-operator
-	// github.com/googleapis/gnostic => github.com/googleapis/gnostic v0.3.1
+	github.com/datastax/cass-operator => github.com/burmanm/cass-operator v1.4.1-0.20210226121550-7ae268fd65fa
 	k8s.io/api => k8s.io/api v0.20.4
 	k8s.io/apiextensions-apiserver => k8s.io/apiextensions-apiserver v0.20.4
 	k8s.io/apimachinery => k8s.io/apimachinery v0.21.0-alpha.0
@@ -39,7 +38,6 @@ require (
 	k8s.io/cli-runtime v0.20.4
 	k8s.io/client-go v12.0.0+incompatible
 	k8s.io/kubectl v0.19.2
-	k8s.io/kubernetes v1.20.4 // indirect
 	sigs.k8s.io/controller-runtime v0.7.2
 )
 

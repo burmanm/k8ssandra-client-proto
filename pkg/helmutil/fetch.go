@@ -3,19 +3,15 @@ package helmutil
 import (
 	"io/ioutil"
 	"os"
+	"path/filepath"
 	"strings"
 
+	"github.com/burmanm/k8ssandra-client/pkg/util"
 	"helm.sh/helm/v3/pkg/chartutil"
 	"helm.sh/helm/v3/pkg/cli"
 	"helm.sh/helm/v3/pkg/downloader"
 	"helm.sh/helm/v3/pkg/getter"
 	"helm.sh/helm/v3/pkg/repo"
-)
-
-const (
-	repoURL = "https://helm.k8ssandra.io/"
-	// ChartName is the name of k8ssandra's helm repo chart
-	ChartName = "k8ssandra"
 )
 
 // DownloadChartRelease fetches the k8ssandra target version and extracts it to a directory which path is returned
@@ -40,7 +36,7 @@ func DownloadChartRelease(targetVersion string) (string, error) {
 	// helm repo add k8ssandra https://helm.k8ssandra.io/
 	r, err := repo.NewChartRepository(&repo.Entry{
 		Name: ChartName,
-		URL:  repoURL,
+		URL:  RepoURL,
 	}, getter.All(settings))
 
 	if err != nil {
@@ -65,12 +61,12 @@ func DownloadChartRelease(targetVersion string) (string, error) {
 		return "", err
 	}
 
-	url, err := repo.ResolveReferenceURL(repoURL, cv.URLs[0])
+	url, err := repo.ResolveReferenceURL(RepoURL, cv.URLs[0])
 	if err != nil {
 		return "", err
 	}
 
-	// Download to filesystem or otherwise to a usable format
+	// Download to filesystem for extraction purposes
 	dir, err := ioutil.TempDir("", "helmutil-")
 	if err != nil {
 		return "", err
@@ -78,14 +74,15 @@ func DownloadChartRelease(targetVersion string) (string, error) {
 
 	defer os.RemoveAll(dir)
 
-	// _ is ProvenanceVerify (we'll want to verify later)
+	// _ is ProvenanceVerify (TODO we might want to verify the release)
 	saved, _, err := c.DownloadTo(url, targetVersion, dir)
 	if err != nil {
 		return "", err
 	}
 
 	// Extract the files
-	extractDir, err := ioutil.TempDir("", "helmutil-extract-")
+	subDir := filepath.Join("helm", targetVersion)
+	extractDir, err := util.GetCacheDir(subDir)
 	if err != nil {
 		return "", err
 	}
