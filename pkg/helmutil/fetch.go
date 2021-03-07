@@ -1,6 +1,7 @@
 package helmutil
 
 import (
+	"io"
 	"io/ioutil"
 	"os"
 	"path/filepath"
@@ -16,6 +17,10 @@ import (
 
 // DownloadChartRelease fetches the k8ssandra target version and extracts it to a directory which path is returned
 func DownloadChartRelease(targetVersion string) (string, error) {
+
+	// TODO There's also internal Helm cache and we could use that with https://github.com/helm/helm/blob/master/pkg/action/chart_pull.go
+	// No need to replicate all the code or have our internal cache directory for these
+
 	settings := cli.New()
 	var out strings.Builder
 
@@ -94,4 +99,9 @@ func DownloadChartRelease(targetVersion string) (string, error) {
 	}
 
 	return extractDir, nil
+}
+
+// ValuesYaml fetches the chartVersion's values.yaml file for editing purposes
+func ValuesYaml(targetVersion string) (io.Reader, error) {
+	return nil, nil
 }
