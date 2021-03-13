@@ -57,6 +57,7 @@ func NewCmd(streams genericclioptions.IOStreams) *cobra.Command {
 	}
 
 	o.configFlags.AddFlags(cmd.Flags())
+	// TODO Add a flag to decide if backups are deleted or not?
 	return cmd
 }
 

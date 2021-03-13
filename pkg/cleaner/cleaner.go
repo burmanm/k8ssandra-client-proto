@@ -5,6 +5,7 @@ import (
 	"log"
 
 	cassdcapi "github.com/datastax/cass-operator/operator/pkg/apis/cassandra/v1beta1"
+	medusa "github.com/k8ssandra/medusa-operator/api/v1alpha1"
 	"k8s.io/client-go/kubernetes/scheme"
 	"k8s.io/client-go/tools/clientcmd/api"
 	ctrl "sigs.k8s.io/controller-runtime"
@@ -15,6 +16,7 @@ const (
 	managedLabel      = "app.kubernetes.io/managed-by"
 	managedLabelValue = "Helm"
 	releaseAnnotation = "meta.helm.sh/release-name"
+	instanceLabel     = "app.kubernetes.io/instance"
 )
 
 // Agent is a cleaner utility for resources which helm pre-delete requires
@@ -52,6 +54,28 @@ func (a *Agent) RemoveResources(releaseName string) error {
 	return nil
 }
 
+func (a *Agent) removeCassandraBackups(cassdc *cassdcapi.CassandraDatacenter, releaseName string) error {
+	// Should be related to a removed CassandraDatacenter.. spec.cassandraDatacenter has it
+	list := &medusa.CassandraBackupList{}
+	err := a.Client.List(context.Background(), list, client.InNamespace(cassdc.Namespace), client.MatchingLabels(map[string]string{instanceLabel: releaseName}))
+	if err != nil {
+		log.Fatalf("Failed to list CassandraBackups in namespace %s for release %s", a.Namespace, releaseName)
+		return err
+	}
+
+	for _, backup := range list.Items {
+		if backup.Spec.CassandraDatacenter == cassdc.Name {
+			err = a.Client.Delete(context.Background(), &backup)
+			if err != nil {
+				log.Fatalf("Failed to delete CassandraBackup: %v\n", backup)
+				return err
+			}
+		}
+	}
+
+	return nil
+}
+
 func (a *Agent) removeCassandraDatacenter(releaseName string) error {
 	log.Printf("Removing CassandraDatacenter(s) managed in release %s from namespace %s\n", releaseName, a.Namespace)
 	list := &cassdcapi.CassandraDatacenterList{}
@@ -64,6 +88,7 @@ func (a *Agent) removeCassandraDatacenter(releaseName string) error {
 	for _, cassdc := range list.Items {
 		if release, found := cassdc.Annotations[releaseAnnotation]; found {
 			if release == releaseName {
+				a.removeCassandraBackups(&cassdc, releaseName)
 				err = a.Client.Delete(context.Background(), &cassdc)
 				if err != nil {
 					log.Fatalf("Failed to delete CassandraDatacenter: %v\n", cassdc)

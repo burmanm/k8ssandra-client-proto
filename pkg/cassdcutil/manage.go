@@ -2,6 +2,8 @@ package cassdcutil
 
 import (
 	"context"
+	"log"
+	"time"
 
 	cassdcapi "github.com/datastax/cass-operator/operator/pkg/apis/cassandra/v1beta1"
 	corev1 "k8s.io/api/core/v1"
@@ -66,28 +68,23 @@ func (c *CassManager) ModifyStoppedState(name, namespace string, stop, wait bool
 		return err
 	}
 
-	// if wait {
-	// 	c.CassandraDatacenterPods(cassdc)
-	// }
-
-	// Wait for next time if it's ready
-	// r.Log.Info("the cassandradatacenter has been updated and will be shutdown", "CassandraDatacenter", cassdcKey)
-	// return ctrl.Result{RequeueAfter: 10 * time.Second}, nil
-
-	// if cassdc.Spec.Stopped {
-
-	// 	// TODO Implement --wait using this approach
-
-	// 	// If cass-operator hasn't finished shutting down all the pods, requeue and check later again
-	// 	podList := &corev1.PodList{}
-	// 	r.List(ctx, podList, client.InNamespace(namespace), client.MatchingLabels(map[string]string{"cassandra.datastax.com/datacenter": name}))
-
-	// 	if len(podList.Items) > 0 {
-	// 		// Some pods have not been shutdown yet
-	// 		return ctrl.Result{RequeueAfter: 10 * time.Second}, nil
-	// 	}
-	// } else {
-	// }
+	if wait && stop {
+		// TODO Needs the timeout parameter also from kubectl
+		for {
+			podList, err := c.CassandraDatacenterPods(cassdc)
+			if err != nil {
+				return err
+			}
+			if len(podList.Items) > 0 {
+				log.Printf("Waiting for all pods to shutdown...\n")
+				// Still some alive pods, wait for 5s and try again
+				time.Sleep(5 * time.Second)
+			} else {
+				log.Printf("Shutdown of %s complete\n", name)
+				return nil
+			}
+		}
+	}
 
 	return nil
 }

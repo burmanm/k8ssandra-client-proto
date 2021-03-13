@@ -34,7 +34,8 @@ replace (
 )
 
 require (
-	github.com/datastax/cass-operator v0.0.0-00010101000000-000000000000
+	github.com/datastax/cass-operator v1.5.1-0.20210112050706-a45fd80b40e0
+	github.com/k8ssandra/medusa-operator v0.1.0
 	github.com/spf13/cobra v1.1.3
 	github.com/spf13/pflag v1.0.5
 	gopkg.in/yaml.v3 v3.0.0-20200615113413-eeeca48fe776
