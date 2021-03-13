@@ -1,8 +1,6 @@
 package cassdcutil
 
 import (
-	"log"
-
 	cassdcapi "github.com/datastax/cass-operator/operator/pkg/apis/cassandra/v1beta1"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -12,11 +10,20 @@ import (
 func GetClient() (client.Client, error) {
 	c, err := client.New(ctrl.GetConfigOrDie(), client.Options{})
 	if err != nil {
-		log.Fatal(err)
 		return nil, err
 	}
 
 	err = cassdcapi.AddToScheme(c.Scheme())
 
+	return c, nil
+}
+
+func GetClientInNamespace(namespace string) (client.Client, error) {
+	c, err := GetClient()
+	if err != nil {
+		return nil, err
+	}
+
+	c = client.NewNamespacedClient(c, namespace)
 	return c, nil
 }

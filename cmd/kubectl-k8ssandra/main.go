@@ -17,6 +17,7 @@
 	edit							=> edit settings of release
 	init							=> install all operators, but not any Cassandra cluster* (requires ability to disable Cassandra in k8ssandra)
 	install 						=> install Cassandra cluster, present config editor and auto-create releaseName (cluster-<random>)
+	installations					=> get all the installations in the target k8s cluster(s)
 	cleancache						=> remove cached Helm releases
 
 	components						=> install, list, uninstall, edit current components (stargate, reaper, medusa..)

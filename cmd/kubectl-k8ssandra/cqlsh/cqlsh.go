@@ -56,6 +56,8 @@ func NewCmd(streams genericclioptions.IOStreams) *cobra.Command {
 
 	o.configFlags.AddFlags(cmd.Flags())
 
+	// TODO Add flags such as -f from file (local file, not container file)
+
 	return cmd
 }
 
