@@ -138,5 +138,5 @@ func (c *options) Validate() error {
 
 // Run starts an interactive cqlsh shell on target pod
 func (c *options) Run(stop bool) error {
-	return c.cassManager.ModifyStoppedState(c.dcName, c.namespace, stop, false)
+	return c.cassManager.ModifyStoppedState(c.dcName, c.namespace, stop, c.wait)
 }
