@@ -19,6 +19,7 @@
 	install 						=> install Cassandra cluster, present config editor and auto-create releaseName (cluster-<random>)
 	installations					=> get all the installations in the target k8s cluster(s)
 	cleancache						=> remove cached Helm releases
+	upgrade							=> upgrade cluster / upgrade Cassandra version
 
 	components						=> install, list, uninstall, edit current components (stargate, reaper, medusa..)
 

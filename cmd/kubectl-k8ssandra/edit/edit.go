@@ -20,7 +20,7 @@ import (
 
 var (
 	editExample = `
-	# launch a interactive cqlsh shell on pod
+	# edit configuration of a release (installation of k8ssandra)
 	%[1]s edit <release>
 `
 	errNoRelease = fmt.Errorf("no target release given, could not modify settings")

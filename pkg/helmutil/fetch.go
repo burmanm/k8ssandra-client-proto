@@ -8,18 +8,19 @@ import (
 	"strings"
 
 	"github.com/burmanm/k8ssandra-client/pkg/util"
+	"helm.sh/helm/v3/pkg/action"
 	"helm.sh/helm/v3/pkg/chartutil"
 	"helm.sh/helm/v3/pkg/cli"
 	"helm.sh/helm/v3/pkg/downloader"
 	"helm.sh/helm/v3/pkg/getter"
+	"helm.sh/helm/v3/pkg/release"
 	"helm.sh/helm/v3/pkg/repo"
 )
 
 // DownloadChartRelease fetches the k8ssandra target version and extracts it to a directory which path is returned
 func DownloadChartRelease(targetVersion string) (string, error) {
-
-	// TODO There's also internal Helm cache and we could use that with https://github.com/helm/helm/blob/master/pkg/action/chart_pull.go
-	// No need to replicate all the code or have our internal cache directory for these
+	// Unfortunately, the helm's chart pull command uses "internal" marked structs, so it can't be used for
+	// pulling the data. Thus, we need to replicate the implementation here and use our own cache
 
 	settings := cli.New()
 	var out strings.Builder
@@ -99,6 +100,12 @@ func DownloadChartRelease(targetVersion string) (string, error) {
 	}
 
 	return extractDir, nil
+}
+
+func ListInstallations(cfg *action.Configuration) ([]*release.Release, error) {
+	listAction := action.NewList(cfg)
+	listAction.AllNamespaces = true
+	return listAction.Run()
 }
 
 // ValuesYaml fetches the chartVersion's values.yaml file for editing purposes
