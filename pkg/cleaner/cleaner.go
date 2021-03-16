@@ -88,7 +88,6 @@ func (a *Agent) removeCassandraDatacenter(releaseName string) error {
 	for _, cassdc := range list.Items {
 		if release, found := cassdc.Annotations[releaseAnnotation]; found {
 			if release == releaseName {
-				a.removeCassandraBackups(&cassdc, releaseName)
 				err = a.Client.Delete(context.Background(), &cassdc)
 				if err != nil {
 					log.Fatalf("Failed to delete CassandraDatacenter: %v\n", cassdc)
