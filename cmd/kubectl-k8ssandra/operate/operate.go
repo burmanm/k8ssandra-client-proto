@@ -22,6 +22,11 @@ var (
 	%[1]s stop <cluster> --wait
 	`
 
+	restartExample = `
+	# request a rolling restart for cluster
+	%[1]s restart <cluster>
+	`
+
 	errNoClusterDefined = fmt.Errorf("no target cluster defined, could not modify state")
 )
 
@@ -64,7 +69,38 @@ func NewStartCmd(streams genericclioptions.IOStreams) *cobra.Command {
 		},
 	}
 
-	o.configFlags.AddFlags(cmd.Flags())
+	fl := cmd.Flags()
+	fl.BoolVarP(&o.wait, "wait", "w", false, "wait until all pods have started")
+	o.configFlags.AddFlags(fl)
+	return cmd
+}
+
+func NewRestartCmd(streams genericclioptions.IOStreams) *cobra.Command {
+	o := newOptions(streams)
+
+	cmd := &cobra.Command{
+		Use:          "restart [cluster]",
+		Short:        "request rolling restart for an existing running Cassandra cluster",
+		Example:      fmt.Sprintf(startExample, "kubectl k8ssandra"),
+		SilenceUsage: true,
+		RunE: func(c *cobra.Command, args []string) error {
+			if err := o.Complete(c, args); err != nil {
+				return err
+			}
+			if err := o.Validate(); err != nil {
+				return err
+			}
+			if err := o.Run(false); err != nil {
+				return err
+			}
+
+			return nil
+		},
+	}
+
+	fl := cmd.Flags()
+	fl.BoolVarP(&o.wait, "wait", "w", false, "wait until all pods have restarted")
+	o.configFlags.AddFlags(fl)
 	return cmd
 }
 
@@ -136,4 +172,9 @@ func (c *options) Validate() error {
 // Run starts an interactive cqlsh shell on target pod
 func (c *options) Run(stop bool) error {
 	return c.cassManager.ModifyStoppedState(c.dcName, c.namespace, stop, c.wait)
+}
+
+// Restart issues a restart command to target cluster
+func (c *options) Restart() error {
+	return c.cassManager.RollingRestart(c.dcName, c.namespace, c.wait)
 }

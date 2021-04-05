@@ -41,6 +41,7 @@ func NewCmd(streams genericclioptions.IOStreams) *cobra.Command {
 	cmd.AddCommand(crds.NewCmd(streams))
 	cmd.AddCommand(edit.NewCmd(streams))
 	cmd.AddCommand(operate.NewStartCmd(streams))
+	cmd.AddCommand(operate.NewRestartCmd(streams))
 	cmd.AddCommand(operate.NewStopCmd(streams))
 	cmd.AddCommand(list.NewCmd(streams))
 

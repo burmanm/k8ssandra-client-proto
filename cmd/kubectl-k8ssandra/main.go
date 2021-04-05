@@ -7,20 +7,23 @@
 	|stop <cluster>					=> shutdown cluster X (but do not delete it)
 	|start <cluster>				=> resume operation of shutdown cluster
 	|nodetool <node>				=> use nodetool on node X
-	restart <cluster>				=> issue rolling restart for cluster X
+	|restart <cluster>				=> issue rolling restart for cluster X
 	|cqlsh <node>					=> exec cqlsh in the node
 	backup 							=> fetch backup information? *
 	restore <cluster> <backup>		=> initiate a restore of cluster X to a version Y. What about to a new cluster?
 	repair <cluster>				=> repair cluster X now
 	get all							=> get all k8ssandra resources (more than kubectl get all)
 	|upgradecrds					=> upgrade installed CRDs to the newest versions from k8ssandra
-	edit							=> edit settings of k8ssandra release
-	edit <cassdc>					=> edit CassandraDatacenter with comments on the YAML
-	init							=> install all operators, but not any Cassandra cluster* (requires ability to disable Cassandra in k8ssandra)
+	edit release <release>			=> edit settings of k8ssandra release
+	edit cassdc <cassdc>			=> edit CassandraDatacenter with comments on the YAML
+	init							=> install all operators, but not any Cassandra cluster*
+									   helm install release charts/k8ssandra --set cassandra.enabled=false
 	install 						=> install Cassandra cluster, present config editor and auto-create releaseName (cluster-<random>)
-	|list							=> get all the installations in the target k8s cluster(s) - list?
+	|*list							=> get all the installations in the target k8s cluster(s) - list?
+									   also display if there's an update available
 	cleancache						=> remove cached Helm releases
 	upgrade							=> upgrade k8ssandra version
+	status							=> show cache size, show newest available versions (stable + devel?)
 
 	components						=> install, list, uninstall, edit current components (stargate, reaper, medusa..)
 
