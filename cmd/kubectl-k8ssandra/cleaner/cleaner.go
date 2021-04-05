@@ -6,7 +6,6 @@ import (
 	impl "github.com/burmanm/k8ssandra-client/pkg/cleaner"
 	"github.com/spf13/cobra"
 	"k8s.io/cli-runtime/pkg/genericclioptions"
-	"k8s.io/kubectl/pkg/cmd/exec"
 )
 
 var (
@@ -20,9 +19,10 @@ var (
 type options struct {
 	configFlags *genericclioptions.ConfigFlags
 	genericclioptions.IOStreams
-	execOptions *exec.ExecOptions
 	releaseName string
 	namespace   string
+	wait        bool
+	backups     bool
 }
 
 func newOptions(streams genericclioptions.IOStreams) *options {
@@ -56,8 +56,12 @@ func NewCmd(streams genericclioptions.IOStreams) *cobra.Command {
 		},
 	}
 
+	fl := cmd.Flags()
+	fl.BoolVarP(&o.wait, "wait", "w", false, "wait until all CassandraDatacenters have been removed")
+	fl.BoolVarP(&o.backups, "backups", "b", false, "remove backups")
+	o.configFlags.AddFlags(fl)
+
 	o.configFlags.AddFlags(cmd.Flags())
-	// TODO Add a flag to decide if backups are deleted or not?
 	return cmd
 }
 
@@ -85,5 +89,13 @@ func (c *options) Run() error {
 	if err != nil {
 		return err
 	}
-	return agent.RemoveResources(c.releaseName)
+	err = agent.RemoveCassandraDatacenters(c.releaseName, c.wait)
+	if err != nil {
+		return err
+	}
+	if c.backups {
+		return agent.RemoveCassandraBackups(c.releaseName, c.wait)
+	}
+
+	return nil
 }

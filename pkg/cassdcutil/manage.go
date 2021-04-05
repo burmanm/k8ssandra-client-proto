@@ -2,20 +2,14 @@ package cassdcutil
 
 import (
 	"context"
-	"log"
 	"time"
 
 	cassdcapi "github.com/datastax/cass-operator/operator/pkg/apis/cassandra/v1beta1"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/types"
+	waitutil "k8s.io/apimachinery/pkg/util/wait"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
-
-// import(
-
-// )
-
-// const ()
 
 type CassManager struct {
 	client client.Client
@@ -53,11 +47,6 @@ func (c *CassManager) ModifyStoppedState(name, namespace string, stop, wait bool
 		return err
 	}
 
-	if cassdc.Spec.Stopped == stop {
-		// Already in requested state
-		return nil
-	}
-
 	cassdc = cassdc.DeepCopy()
 
 	cassdc.Spec.Stopped = stop
@@ -68,22 +57,17 @@ func (c *CassManager) ModifyStoppedState(name, namespace string, stop, wait bool
 		return err
 	}
 
-	if wait && stop {
-		// TODO Needs the timeout parameter also from kubectl
-		for {
+	if wait {
+		return waitutil.PollImmediate(10*time.Second, 10*time.Minute, func() (bool, error) {
 			podList, err := c.CassandraDatacenterPods(cassdc)
 			if err != nil {
-				return err
+				return false, err
 			}
-			if len(podList.Items) > 0 {
-				log.Printf("Waiting for all pods to shutdown...\n")
-				// Still some alive pods, wait for 5s and try again
-				time.Sleep(5 * time.Second)
-			} else {
-				log.Printf("Shutdown of %s complete\n", name)
-				return nil
+			if stop {
+				return len(podList.Items) == 0, nil
 			}
-		}
+			return len(podList.Items) > 0, nil
+		})
 	}
 
 	return nil

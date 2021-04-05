@@ -112,9 +112,6 @@ func (c *options) Complete(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	// TODO Parse the --wait
-	// if allNamespaces { }
-
 	client, err := cassdcutil.GetClientInNamespace(c.namespace)
 	if err != nil {
 		return err
