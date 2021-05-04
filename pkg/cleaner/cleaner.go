@@ -5,8 +5,8 @@ import (
 	"log"
 	"time"
 
-	cassdcapi "github.com/datastax/cass-operator/operator/pkg/apis/cassandra/v1beta1"
-	medusa "github.com/k8ssandra/medusa-operator/api/v1alpha1"
+	cassdcapi "github.com/k8ssandra/cass-operator/operator/pkg/apis/cassandra/v1beta1"
+	// medusa "github.com/k8ssandra/medusa-operator/api/v1alpha1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/types"
 	waitutil "k8s.io/apimachinery/pkg/util/wait"
@@ -50,37 +50,37 @@ func New(namespace string) (*Agent, error) {
 	}, nil
 }
 
-func (a *Agent) RemoveCassandraBackups(releaseName string, wait bool) error {
-	// Should be related to a removed CassandraDatacenter.. spec.cassandraDatacenter has it
-	list := &medusa.CassandraBackupList{}
-	err := a.Client.List(context.Background(), list, client.InNamespace(a.Namespace), client.MatchingLabels(map[string]string{instanceLabel: releaseName}))
-	if err != nil {
-		log.Fatalf("Failed to list CassandraBackups in namespace %s for release %s", a.Namespace, releaseName)
-		return err
-	}
+// func (a *Agent) RemoveCassandraBackups(releaseName string, wait bool) error {
+// 	// Should be related to a removed CassandraDatacenter.. spec.cassandraDatacenter has it
+// 	list := &medusa.CassandraBackupList{}
+// 	err := a.Client.List(context.Background(), list, client.InNamespace(a.Namespace), client.MatchingLabels(map[string]string{instanceLabel: releaseName}))
+// 	if err != nil {
+// 		log.Fatalf("Failed to list CassandraBackups in namespace %s for release %s", a.Namespace, releaseName)
+// 		return err
+// 	}
 
-	for _, backup := range list.Items {
-		err = a.Client.Delete(context.Background(), &backup)
-		if err != nil {
-			log.Fatalf("Failed to delete CassandraBackup: %v\n", backup)
-			return err
-		}
-	}
+// 	for _, backup := range list.Items {
+// 		err = a.Client.Delete(context.Background(), &backup)
+// 		if err != nil {
+// 			log.Fatalf("Failed to delete CassandraBackup: %v\n", backup)
+// 			return err
+// 		}
+// 	}
 
-	if wait {
-		return waitutil.PollImmediate(10*time.Second, 10*time.Minute, func() (bool, error) {
-			list := &medusa.CassandraBackupList{}
-			err := a.Client.List(context.Background(), list, client.InNamespace(a.Namespace), client.MatchingLabels(map[string]string{instanceLabel: releaseName}))
-			if err != nil {
-				log.Printf("failed to list CassandraBackups: %s\n", err)
-				return false, err
-			}
-			return len(list.Items) == 0, nil
-		})
-	}
+// 	if wait {
+// 		return waitutil.PollImmediate(10*time.Second, 10*time.Minute, func() (bool, error) {
+// 			list := &medusa.CassandraBackupList{}
+// 			err := a.Client.List(context.Background(), list, client.InNamespace(a.Namespace), client.MatchingLabels(map[string]string{instanceLabel: releaseName}))
+// 			if err != nil {
+// 				log.Printf("failed to list CassandraBackups: %s\n", err)
+// 				return false, err
+// 			}
+// 			return len(list.Items) == 0, nil
+// 		})
+// 	}
 
-	return nil
-}
+// 	return nil
+// }
 
 func (a *Agent) RemoveCassandraDatacenters(releaseName string, wait bool) error {
 	log.Printf("Removing CassandraDatacenter(s) managed in release %s from namespace %s\n", releaseName, a.Namespace)

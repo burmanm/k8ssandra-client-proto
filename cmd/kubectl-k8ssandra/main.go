@@ -5,7 +5,7 @@
 	command selection, such as:
 	|remove <release> 				=> uninstall CassandraDatacenter (+ finalizers, + unused secrets?) for release X, but nothing else (cleaner)
 	|stop <cluster>					=> shutdown cluster X (but do not delete it)
-	|start <cluster>				=> resume operation of shutdown cluster
+	|start <cluster>				=> resume operation of shutdown cluster (should this be suspend / resume ?)
 	|nodetool <node>				=> use nodetool on node X
 	|restart <cluster>				=> issue rolling restart for cluster X
 	|cqlsh <node>					=> exec cqlsh in the node
@@ -16,21 +16,28 @@
 	|upgradecrds					=> upgrade installed CRDs to the newest versions from k8ssandra
 	edit release <release>			=> edit settings of k8ssandra release
 	edit cassdc <cassdc>			=> edit CassandraDatacenter with comments on the YAML
-	init							=> install all operators, but not any Cassandra cluster*
+	init							=> install all operators, but not any Cassandra cluster
 									   helm install release charts/k8ssandra --set cassandra.enabled=false
+									   or install only cass-operator, nothing else? And allow parameters to install more / use components to install more
 	install 						=> install Cassandra cluster, present config editor and auto-create releaseName (cluster-<random>)
 	|*list							=> get all the installations in the target k8s cluster(s) - list?
 									   also display if there's an update available
 	cleancache						=> remove cached Helm releases
 	upgrade							=> upgrade k8ssandra version
-	status							=> show cache size, show newest available versions (stable + devel?)
+	clientstatus					=> show cache size, show newest available versions (stable + devel?)
+	status							=> show detailed status of installed clusters (like list, but with more details such as fetced from nodetool status)
+	port-forward <service>			=> open port-forward to Reaper UI, Grafana UI, etc
 
 	components						=> install, list, uninstall, edit current components (stargate, reaper, medusa..)
 
 	*
 		* backup list <cluster>
 		* backup create <cluster>
+		* backup create schedule? (once we implement such - although with CronJob one could run this to get around this behavior)
+		* backup status (and restore status), show current backup processes status, same for repair and restore
 	--wait (wait for some process to finish)
+
+	* Should we have tools under which "nodetool" and "cqlsh" would live in?
 
 	| indicates the feature is implemented (at least partially). This TODO list is not indication of correct parameters, verify from the command itself
 */

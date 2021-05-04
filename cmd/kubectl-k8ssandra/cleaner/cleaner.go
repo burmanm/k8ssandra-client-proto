@@ -58,7 +58,7 @@ func NewCmd(streams genericclioptions.IOStreams) *cobra.Command {
 
 	fl := cmd.Flags()
 	fl.BoolVarP(&o.wait, "wait", "w", false, "wait until all CassandraDatacenters have been removed")
-	fl.BoolVarP(&o.backups, "backups", "b", false, "remove backups")
+	// fl.BoolVarP(&o.backups, "backups", "b", false, "remove backups")
 	o.configFlags.AddFlags(fl)
 
 	o.configFlags.AddFlags(cmd.Flags())
@@ -93,9 +93,9 @@ func (c *options) Run() error {
 	if err != nil {
 		return err
 	}
-	if c.backups {
-		return agent.RemoveCassandraBackups(c.releaseName, c.wait)
-	}
+	// if c.backups {
+	// 	return agent.RemoveCassandraBackups(c.releaseName, c.wait)
+	// }
 
 	return nil
 }
