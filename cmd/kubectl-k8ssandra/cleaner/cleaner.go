@@ -61,7 +61,6 @@ func NewCmd(streams genericclioptions.IOStreams) *cobra.Command {
 	// fl.BoolVarP(&o.backups, "backups", "b", false, "remove backups")
 	o.configFlags.AddFlags(fl)
 
-	o.configFlags.AddFlags(cmd.Flags())
 	return cmd
 }
 
