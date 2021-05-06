@@ -34,7 +34,7 @@ jobs:
         id: docker_build
         uses: docker/build-push-action@v2
         with:
-          file: cmd/k8ssandra-client/Dockerfile
+          file: cmd/kubectl-k8ssandra/Dockerfile
           push: ${{ github.event_name != 'pull_request' }}
           tags: burmanm/k8ssandra-client:${{ steps.vars.outputs.sha_short }}, burmanm/k8ssandra-client:latest
           platforms: linux/amd64
