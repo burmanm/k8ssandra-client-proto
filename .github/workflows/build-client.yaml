@@ -1,0 +1,42 @@
+name: k8ssandra-client build and deploy
+on:
+  push:
+    branches:
+      - master
+jobs:
+  build_docker_image:
+    name: Build k8ssandra-client Docker Image
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/master'
+    steps:
+      - name: Check out code into the Go module directory
+        uses: actions/checkout@v2
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v1
+      - name: Cache Docker layers
+        uses: actions/cache@v2
+        with:
+          path: /tmp/.buildx-cache
+          key: ${{ runner.os }}-buildx-${{ github.sha }}
+          restore-keys: |
+            ${{ runner.os }}-buildx-
+      - name: Login to DockerHub
+        uses: docker/login-action@v1
+        with:
+          username: ${{ secrets.DOCKER_HUB_USERNAME }}
+          password: ${{ secrets.DOCKER_HUB_PASSWORD }}
+      - name: Set git parsed values
+        id: vars
+        run: |
+          echo ::set-output name=sha_short::$(git rev-parse --short=8 ${{ github.sha }})
+          echo ::set-output name=tag_name::${GITHUB_REF#refs/tags/}
+      - name: Build and push
+        id: docker_build
+        uses: docker/build-push-action@v2
+        with:
+          file: cmd/k8ssandra-client/Dockerfile
+          push: ${{ github.event_name != 'pull_request' }}
+          tags: burmanm/k8ssandra-client:${{ steps.vars.outputs.sha_short }}, burmanm/k8ssandra-client:latest
+          platforms: linux/amd64
+          cache-from: type=local,src=/tmp/.buildx-cache
+          cache-to: type=local,dest=/tmp/.buildx-cache
