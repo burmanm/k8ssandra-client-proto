@@ -8,6 +8,7 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/burmanm/k8ssandra-client/pkg/helmutil"
 	"gopkg.in/yaml.v3"
@@ -60,12 +61,20 @@ func (u *Upgrader) Upgrade(targetVersion string) error {
 	}
 
 	// reaper and medusa subdirs have the required yaml files
-	crdDir := filepath.Join(extractDir, helmutil.ChartName, "crds/")
-	defer os.RemoveAll(crdDir)
+	chartPath := filepath.Join(extractDir, helmutil.ChartName)
+	defer os.RemoveAll(chartPath)
 
 	crds := make([]unstructured.Unstructured, 0)
 
-	err = u.parseChartCRDs(&crds, crdDir)
+	// For each dir under the charts subdir, check the "crds/"
+	paths, _ := findCRDDirs(chartPath)
+
+	for _, path := range paths {
+		err = parseChartCRDs(&crds, path)
+		if err != nil {
+			return err
+		}
+	}
 
 	var res []client.Object
 	for _, obj := range crds {
@@ -85,8 +94,29 @@ func (u *Upgrader) Upgrade(targetVersion string) error {
 	return err
 }
 
-func (u *Upgrader) parseChartCRDs(crds *[]unstructured.Unstructured, crdDir string) error {
-	err := filepath.Walk(crdDir, func(path string, info os.FileInfo, err error) error {
+func findCRDDirs(chartDir string) ([]string, error) {
+	dirs := make([]string, 0)
+	err := filepath.Walk(chartDir, func(path string, info os.FileInfo, err error) error {
+		if err != nil {
+			return err
+		}
+		if info.IsDir() {
+			if strings.HasSuffix(path, "crds") {
+				dirs = append(dirs, path)
+			}
+			return nil
+		}
+		return nil
+	})
+	return dirs, err
+}
+
+func parseChartCRDs(crds *[]unstructured.Unstructured, crdDir string) error {
+	errOuter := filepath.Walk(crdDir, func(path string, info os.FileInfo, err error) error {
+		if err != nil {
+			return err
+		}
+
 		if info.IsDir() {
 			return nil
 		}
@@ -113,5 +143,5 @@ func (u *Upgrader) parseChartCRDs(crds *[]unstructured.Unstructured, crdDir stri
 		return nil
 	})
 
-	return err
+	return errOuter
 }
