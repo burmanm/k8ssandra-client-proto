@@ -5,6 +5,7 @@ import (
 	"io/ioutil"
 	"os"
 	"path/filepath"
+	"strconv"
 
 	"github.com/burmanm/k8ssandra-client/pkg/util"
 	"gopkg.in/yaml.v3"
@@ -15,9 +16,13 @@ import (
 )
 
 // ChartVersion gets the release's chart version or returns an error if it did not exist
-func ChartVersion(releaseName string) (string, error) {
-	// TODO We need to parse the correct chart version..
-	return "1.0.0", nil
+func ChartVersion(cfg *action.Configuration, releaseName string) (string, error) {
+	rel, err := Release(cfg, releaseName)
+	if err != nil {
+		return "", err
+	}
+
+	return rel.Chart.Metadata.Version, nil
 }
 
 // SetValues returns the deployed Helm releases modified values
@@ -33,6 +38,7 @@ func UpgradeValues(cfg *action.Configuration, chartDir, releaseName string, inpu
 	// Needs the chartPath we just Merged values from ..
 
 	// Check chart dependencies to make sure all are present in /charts
+	chartDir = filepath.Join(chartDir, ChartName)
 	ch, err := loader.Load(chartDir)
 	if err != nil {
 		return nil, err
@@ -175,7 +181,18 @@ func recursiveMerge(from, into *yaml.Node) error {
 	case yaml.DocumentNode:
 		recursiveMerge(from.Content[0], into.Content[0])
 	case yaml.ScalarNode:
-		into.Value = from.Value
+		if from.Tag == "!!float" && into.Tag == "!!int" {
+			// We need a marshalling trick to get it correctly back to int
+			out, err := yaml.Marshal(from)
+			if err != nil {
+				return err
+			}
+			var newVal int
+			yaml.Unmarshal(out, &newVal)
+			into.Value = strconv.Itoa(newVal)
+		} else {
+			into.Value = from.Value
+		}
 	default:
 		return errors.New("can only merge mapping, scalar and sequence nodes")
 	}

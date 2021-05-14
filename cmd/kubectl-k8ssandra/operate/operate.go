@@ -90,7 +90,7 @@ func NewRestartCmd(streams genericclioptions.IOStreams) *cobra.Command {
 			if err := o.Validate(); err != nil {
 				return err
 			}
-			if err := o.Run(false); err != nil {
+			if err := o.Restart(); err != nil {
 				return err
 			}
 

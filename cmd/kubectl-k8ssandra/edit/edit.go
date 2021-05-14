@@ -108,7 +108,7 @@ func (c *options) Run() error {
 	// TODO We could do this in Validate also..
 
 	// TODO Implement ChartVersion
-	targetVersion, err := helmutil.ChartVersion("")
+	targetVersion, err := helmutil.ChartVersion(c.cfg, c.releaseName)
 	if err != nil {
 		return err
 	}
@@ -125,15 +125,20 @@ func (c *options) Run() error {
 		return err
 	}
 
-	// return nil
-	defer outputFile.Close()
-
 	err = editor.OpenEditor(outputFile.Name())
+	if err != nil {
+		outputFile.Close()
+		return err
+	}
+
+	outputFile.Close()
+
+	file, err := os.Open(outputFile.Name())
 	if err != nil {
 		return err
 	}
 
-	_, err = helmutil.UpgradeValues(c.cfg, chartDir, c.releaseName, outputFile)
+	_, err = helmutil.UpgradeValues(c.cfg, chartDir, c.releaseName, file)
 	return err
 
 	// TODO Should we only add values that were modified? In other words, opposite of merge?

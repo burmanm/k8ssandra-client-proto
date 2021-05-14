@@ -21,7 +21,6 @@ import (
 func DownloadChartRelease(targetVersion string) (string, error) {
 	// Unfortunately, the helm's chart pull command uses "internal" marked structs, so it can't be used for
 	// pulling the data. Thus, we need to replicate the implementation here and use our own cache
-
 	settings := cli.New()
 	var out strings.Builder
 
@@ -100,6 +99,11 @@ func DownloadChartRelease(targetVersion string) (string, error) {
 	}
 
 	return extractDir, nil
+}
+
+func Release(cfg *action.Configuration, releaseName string) (*release.Release, error) {
+	getAction := action.NewGet(cfg)
+	return getAction.Run(releaseName)
 }
 
 func ListInstallations(cfg *action.Configuration) ([]*release.Release, error) {
