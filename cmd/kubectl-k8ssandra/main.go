@@ -14,7 +14,7 @@
 	repair <cluster>				=> repair cluster X now
 	get all							=> get all k8ssandra resources (more than kubectl get all)
 	|upgradecrds					=> upgrade installed CRDs to the newest versions from k8ssandra
-	edit release <release>			=> edit settings of k8ssandra release
+	|edit release <release>			=> edit settings of k8ssandra release
 	edit cassdc <cassdc>			=> edit CassandraDatacenter with comments on the YAML
 	init							=> install all operators, but not any Cassandra cluster
 									   helm install release charts/k8ssandra --set cassandra.enabled=false
@@ -30,6 +30,8 @@
 
 	components						=> install, list, uninstall, edit current components (stargate, reaper, medusa..)
 
+	import							=> import existing Cassandra/DSE installation to k8ssandra
+
 	*
 		* backup list <cluster>
 		* backup create <cluster>
@@ -38,6 +40,8 @@
 	--wait (wait for some process to finish)
 
 	* Should we have tools under which "nodetool" and "cqlsh" would live in?
+
+	* If upgrade is initiated (version of underneath Helm chart), remember to run necessary hooks such as CRD updates
 
 	| indicates the feature is implemented (at least partially). This TODO list is not indication of correct parameters, verify from the command itself
 */

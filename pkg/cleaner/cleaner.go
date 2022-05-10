@@ -5,8 +5,7 @@ import (
 	"log"
 	"time"
 
-	cassdcapi "github.com/k8ssandra/cass-operator/operator/pkg/apis/cassandra/v1beta1"
-	// medusa "github.com/k8ssandra/medusa-operator/api/v1alpha1"
+	cassdcapi "github.com/k8ssandra/cass-operator/apis/cassandra/v1beta1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/types"
 	waitutil "k8s.io/apimachinery/pkg/util/wait"
