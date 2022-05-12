@@ -26,9 +26,9 @@
 	upgrade							=> upgrade k8ssandra version
 	clientstatus					=> show cache size, show newest available versions (stable + devel?)
 	status							=> show detailed status of installed clusters (like list, but with more details such as fetced from nodetool status)
-	port-forward <service>			=> open port-forward to Reaper UI, Grafana UI, etc
+	port-forward <rel> <service>	=> open port-forward to Reaper UI, Grafana UI, etc
 
-	components						=> install, list, uninstall, edit current components (stargate, reaper, medusa..)
+	components <rel>				=> install, list, uninstall, edit current components (stargate, reaper, medusa..)
 
 	import							=> import existing Cassandra/DSE installation to k8ssandra
 

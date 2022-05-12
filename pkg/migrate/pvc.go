@@ -2,7 +2,6 @@ package migrate
 
 import (
 	"fmt"
-	"strconv"
 
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
@@ -117,41 +116,6 @@ func (n *NodeMigrator) getPVName(dataDirectory string) string {
 
 func (n *NodeMigrator) getPVCName(dataDirectory string) string {
 	return fmt.Sprintf("%s-%s-%s-%s-sts-%d", dataDirectory, cassdcapi.CleanupForKubernetes(n.Cluster), n.Datacenter, n.Rack, n.Ordinal)
-}
-
-func (n *NodeMigrator) getPodName() string {
-	return fmt.Sprintf("%s-%s-%s-sts-%d", cassdcapi.CleanupForKubernetes(n.Cluster), n.Datacenter, n.Rack, n.Ordinal)
-}
-
-func (n *NodeMigrator) isSeed() bool {
-
-}
-
-func (n *NodeMigrator) CreatePod() *corev1.Pod {
-	enableServiceLinks := true
-	return &corev1.Pod{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      n.getPodName(),
-			Namespace: n.Namespace,
-			Labels: map[string]string{
-				"cassandra.datastax.com/seed-node":   strconv.FormatBool(n.isSeed()),
-				"statefulset.kubernetes.io/pod-name": n.getPodName(),
-			},
-		},
-		Spec: corev1.PodSpec{
-			HostNetwork:        true,
-			Affinity:           &corev1.Affinity{},
-			Containers:         []corev1.Container{},
-			DNSPolicy:          corev1.DNSClusterFirst,
-			EnableServiceLinks: &enableServiceLinks,
-			Hostname:           n.getPodName(),
-			InitContainers:     []corev1.Container{},
-			NodeName:           n.KubeNode,
-			SecurityContext:    &corev1.PodSecurityContext{},
-			Tolerations:        []corev1.Toleration{},
-			Volumes:            []corev1.Volume{},
-		},
-	}
 }
 
 /*
