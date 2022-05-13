@@ -6,7 +6,6 @@ import (
 
 	cassdcapi "github.com/k8ssandra/cass-operator/apis/cassandra/v1beta1"
 	"github.com/k8ssandra/cass-operator/pkg/images"
-	"github.com/pkg/errors"
 
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -38,7 +37,7 @@ func (n *NodeMigrator) CreatePod() (*corev1.Pod, error) {
 		return nil, err
 	}
 
-	initContainers, err := buildInitContainers()
+	initContainers, err := buildInitContainers("")
 	if err != nil {
 		return nil, err
 	}
@@ -89,73 +88,74 @@ func buildInitContainers(rackName string) ([]corev1.Container, error) {
 	// Convert the bool to a string for the env var setting
 	useHostIpForBroadcast := "true"
 
-	configEnvVar, err := getConfigDataEnVars(dc)
-	if err != nil {
-		return nil, errors.Wrap(err, "failed to get config env vars")
-	}
+	// configEnvVar, err := getConfigDataEnVars(dc)
+	// if err != nil {
+	// 	return nil, errors.Wrap(err, "failed to get config env vars")
+	// }
 
-	serverVersion := dc.Spec.ServerVersion
+	// serverVersion := dc.Spec.ServerVersion
 
 	envDefaults := []corev1.EnvVar{
-		{Name: "POD_IP", ValueFrom: selectorFromFieldPath("status.podIP")},
-		{Name: "HOST_IP", ValueFrom: selectorFromFieldPath("status.hostIP")},
+		// {Name: "POD_IP", ValueFrom: selectorFromFieldPath("status.podIP")},
+		// {Name: "HOST_IP", ValueFrom: selectorFromFieldPath("status.hostIP")},
 		{Name: "USE_HOST_IP_FOR_BROADCAST", Value: useHostIpForBroadcast},
 		{Name: "RACK_NAME", Value: rackName},
-		{Name: "PRODUCT_VERSION", Value: serverVersion},
-		{Name: "PRODUCT_NAME", Value: dc.Spec.ServerType},
+		// {Name: "PRODUCT_VERSION", Value: serverVersion},
+		// {Name: "PRODUCT_NAME", Value: dc.Spec.ServerType},
 		// TODO remove this post 1.0
-		{Name: "DSE_VERSION", Value: serverVersion},
+		// {Name: "DSE_VERSION", Value: serverVersion},
 	}
 
-	for _, envVar := range configEnvVar {
-		envDefaults = append(envDefaults, envVar)
-	}
+	// for _, envVar := range configEnvVar {
+	// 	envDefaults = append(envDefaults, envVar)
+	// }
 
 	serverCfg.Env = envDefaults
 
 	return []corev1.Container{serverCfg}, nil
 }
 
-func getConfigDataEnVars(dc *api.CassandraDatacenter) ([]corev1.EnvVar, error) {
-	envVars := make([]corev1.EnvVar, 0)
+// func getConfigDataEnVars(dc *api.CassandraDatacenter) ([]corev1.EnvVar, error) {
+// 	envVars := make([]corev1.EnvVar, 0)
 
-	if len(dc.Spec.ConfigSecret) > 0 {
-		envVars = append(envVars, corev1.EnvVar{
-			Name: "CONFIG_FILE_DATA",
-			ValueFrom: &corev1.EnvVarSource{
-				SecretKeyRef: &corev1.SecretKeySelector{
-					LocalObjectReference: corev1.LocalObjectReference{
-						Name: getDatacenterConfigSecretName(dc),
-					},
-					Key: "config",
-				},
-			},
-		})
+// 	if len(dc.Spec.ConfigSecret) > 0 {
+// 		envVars = append(envVars, corev1.EnvVar{
+// 			Name: "CONFIG_FILE_DATA",
+// 			ValueFrom: &corev1.EnvVarSource{
+// 				SecretKeyRef: &corev1.SecretKeySelector{
+// 					LocalObjectReference: corev1.LocalObjectReference{
+// 						Name: getDatacenterConfigSecretName(dc),
+// 					},
+// 					Key: "config",
+// 				},
+// 			},
+// 		})
 
-		if configHash, ok := dc.Annotations[api.ConfigHashAnnotation]; ok {
-			envVars = append(envVars, corev1.EnvVar{
-				Name:  "CONFIG_HASH",
-				Value: configHash,
-			})
-			return envVars, nil
-		}
+// 		if configHash, ok := dc.Annotations[api.ConfigHashAnnotation]; ok {
+// 			envVars = append(envVars, corev1.EnvVar{
+// 				Name:  "CONFIG_HASH",
+// 				Value: configHash,
+// 			})
+// 			return envVars, nil
+// 		}
 
-		return nil, fmt.Errorf("datacenter %s is missing %s annotation", dc.Name, api.ConfigHashAnnotation)
-	}
+// 		return nil, fmt.Errorf("datacenter %s is missing %s annotation", dc.Name, api.ConfigHashAnnotation)
+// 	}
 
-	configData, err := dc.GetConfigAsJSON(dc.Spec.Config)
+// 	configData, err := dc.GetConfigAsJSON(dc.Spec.Config)
 
-	if err != nil {
-		return envVars, err
-	}
-	envVars = append(envVars, corev1.EnvVar{Name: "CONFIG_FILE_DATA", Value: configData})
+// 	if err != nil {
+// 		return envVars, err
+// 	}
+// 	envVars = append(envVars, corev1.EnvVar{Name: "CONFIG_FILE_DATA", Value: configData})
 
-	return envVars, nil
-}
+// 	return envVars, nil
+// }
 
 func makeImage() (string, error) {
 	// TODO Or just use GetCassandraImage directly?
-	return images.GetCassandraImage(dc.Spec.ServerType, dc.Spec.ServerVersion)
+	return "", nil
+	// return images.GetCassandraImage(dc.Spec.ServerType, dc.Spec.ServerVersion)
 }
 
 // If values are provided in the matching containers in the
@@ -309,12 +309,12 @@ func GetContainerPorts() ([]corev1.ContainerPort, error) {
 		namedPort("thrift", 9160),
 	}
 
-	if dc.Spec.ServerType == "dse" {
-		ports = append(
-			ports,
-			namedPort("internode-msg", 8609),
-		)
-	}
+	// if dc.Spec.ServerType == "dse" {
+	// 	ports = append(
+	// 		ports,
+	// 		namedPort("internode-msg", 8609),
+	// 	)
+	// }
 
 	return ports, nil
 }
