@@ -62,8 +62,6 @@ func NewInitCmd(streams genericclioptions.IOStreams) *cobra.Command {
 	fl := cmd.Flags()
 	fl.StringVarP(&o.nodetoolPath, "nodetool-path", "p", "", "path to nodetool executable")
 	o.configFlags.AddFlags(fl)
-
-	o.configFlags.AddFlags(cmd.Flags())
 	return cmd
 }
 

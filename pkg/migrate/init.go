@@ -7,6 +7,7 @@ import (
 	"os/exec"
 	"regexp"
 	"sort"
+	"strings"
 
 	"github.com/burmanm/k8ssandra-client/pkg/cassdcutil"
 	cassdcapi "github.com/k8ssandra/cass-operator/apis/cassandra/v1beta1"
@@ -73,15 +74,17 @@ func (c *ClusterMigrator) InitCluster() error {
 	p.UpdateTitle("Fetching cluster details")
 	err = c.CreateClusterConfigMap()
 	if err != nil {
-		pterm.Fatal.Println("Failed to get cluster details")
+		fmt.Printf("Failed to get cluster details: %v\n", err)
+		// pterm.Fatal.Println("Failed to get cluster details")
 		return err
 	}
 
 	pterm.Success.Println("Cassandra cluster details stored to Kubernetes")
 
 	p.UpdateTitle("Fetching cluster seeds")
-	err = c.CreateSeedService()
+	err = c.CreateSeedServices()
 	if err != nil {
+		fmt.Printf("Failed to get cluster seeds: %v\n", err)
 		pterm.Fatal.Println("Failed to get cluster seeds")
 		return err
 	}
@@ -175,7 +178,45 @@ func (c *ClusterMigrator) CreateClusterConfigMap() error {
 		return err
 	}
 
-	// Parse output..
+	lines := strings.Split(output, "\n")
+
+	detailsStarted := false
+	for _, line := range lines {
+		if strings.HasPrefix(line, "  ") {
+			// Data lines, current node
+			if detailsStarted {
+				columns := strings.Split(line[2:], ":")
+				if len(columns) > 2 {
+					fieldName := columns[0]
+					fieldValue := columns[2]
+					if fieldName == "DC" {
+						c.Datacenter = fieldValue
+					} else if fieldName == "RACK" {
+						c.Rack = fieldValue
+					}
+				}
+			}
+		} else if strings.HasPrefix(line, "/") {
+			if detailsStarted {
+				// We parsed the remaining fields
+				break
+			}
+		} else {
+			detailsStarted = true
+		}
+	}
+
+	// ClusterName
+	clusterInfo, err := execNodetool(c.NodetoolPath, "describecluster")
+	if err != nil {
+		return err
+	}
+
+	lines = strings.Split(clusterInfo, "\n")
+	fields := strings.Split(lines[1], ":")
+	c.Cluster = fields[1][1:]
+
+	fmt.Printf("Parsed the following:\nRack: %s\nDatacenter: %s\nCluster: %s\n", c.Rack, c.Datacenter, c.Cluster)
 
 	return nil
 }
@@ -199,7 +240,7 @@ func execNodetool(nodetoolPath, command string) (string, error) {
 }
 
 func (c *ClusterMigrator) newSeedService() (*corev1.Service, error) {
-	svc := makeHeadlessService(c.additionalSeedServiceName(), c.Namespace)
+	svc := makeHeadlessService(c.seedServiceName(), c.Namespace)
 	svc.Spec.Selector = buildLabelSelectorForSeedService(c.Cluster)
 
 	if err := c.Client.Create(context.TODO(), svc); err != nil {
@@ -221,7 +262,7 @@ func makeHeadlessService(name, namespace string) *corev1.Service {
 
 func buildLabelSelectorForSeedService(clusterName string) map[string]string {
 	return map[string]string{
-		"cassandra.datastax.com/cluster":   clusterName,
+		"cassandra.datastax.com/cluster":   cassdcapi.CleanupForKubernetes(clusterName),
 		"cassandra.datastax.com/seed-node": "true",
 	}
 }
