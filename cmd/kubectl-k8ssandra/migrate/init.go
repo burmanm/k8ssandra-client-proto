@@ -6,7 +6,6 @@ import (
 	"github.com/burmanm/k8ssandra-client/pkg/migrate"
 	"github.com/spf13/cobra"
 	"k8s.io/cli-runtime/pkg/genericclioptions"
-	"k8s.io/kubectl/pkg/cmd/exec"
 )
 
 var (
@@ -14,16 +13,19 @@ var (
 	# initialize Kubernetes for Cassandra migration
 	%[1]s import init [<args>]
 
+	# Use nodetool from outside $PATH
+	%[1]s import init --nodetool-path=$HOME/bin/nodetool
+
 	`
-	errNotEnoughParameters = fmt.Errorf("not enough parameters to run nodetool")
+	// errNotEnoughParameters = fmt.Errorf("not enough parameters to run nodetool")
 )
 
 type options struct {
 	configFlags *genericclioptions.ConfigFlags
 	genericclioptions.IOStreams
-	execOptions   *exec.ExecOptions
 	targetVersion string
 	namespace     string
+	nodetoolPath  string
 }
 
 func newOptions(streams genericclioptions.IOStreams) *options {
@@ -57,6 +59,10 @@ func NewInitCmd(streams genericclioptions.IOStreams) *cobra.Command {
 		},
 	}
 
+	fl := cmd.Flags()
+	fl.StringVarP(&o.nodetoolPath, "nodetool-path", "p", "", "path to nodetool executable")
+	o.configFlags.AddFlags(fl)
+
 	o.configFlags.AddFlags(cmd.Flags())
 	return cmd
 }
@@ -83,6 +89,10 @@ func (c *options) Run() error {
 	migrator, err := migrate.NewClusterMigrator(c.namespace)
 	if err != nil {
 		return err
+	}
+
+	if c.nodetoolPath != "" {
+		migrator.NodetoolPath = c.nodetoolPath
 	}
 
 	return migrator.InitCluster()
