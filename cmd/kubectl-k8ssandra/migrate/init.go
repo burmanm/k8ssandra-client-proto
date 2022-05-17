@@ -93,5 +93,20 @@ func (c *options) Run() error {
 		migrator.NodetoolPath = c.nodetoolPath
 	}
 
-	return migrator.InitCluster()
+	err = migrator.InitCluster()
+	if err != nil {
+		return err
+	}
+
+	n, err := migrate.NewNodeMigrator(c.namespace, c.nodetoolPath)
+	if err != nil {
+		return err
+	}
+
+	err = n.MigrateNode()
+	if err != nil {
+		return err
+	}
+
+	return nil
 }

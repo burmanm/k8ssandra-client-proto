@@ -1,14 +1,18 @@
 package migrate
 
 import (
+	"context"
 	"fmt"
 	"strconv"
+	"strings"
 
+	"github.com/burmanm/k8ssandra-client/pkg/cassdcutil"
 	cassdcapi "github.com/k8ssandra/cass-operator/apis/cassandra/v1beta1"
 	"github.com/k8ssandra/cass-operator/pkg/images"
 
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/intstr"
 )
 
@@ -20,8 +24,74 @@ const (
 	SystemLoggerContainerName            = "server-system-logger"
 )
 
+func NewNodeMigrator(namespace, nodetoolPath string) (*NodeMigrator, error) {
+	client, err := cassdcutil.GetClientInNamespace(namespace)
+	if err != nil {
+		return nil, err
+	}
+
+	return &NodeMigrator{
+		Client:       client,
+		Namespace:    namespace,
+		NodetoolPath: nodetoolPath,
+	}, nil
+}
+
+func (n *NodeMigrator) MigrateNode() error {
+	err := n.getNodeInfo()
+	if err != nil {
+		return err
+	}
+	// Fetch current node information for cluster+datacenter+rack+hostUUID
+	// Fetch the clusterConfig for ordinal selection
+	// Drain and shutdown the current node
+	// Create PVC + PV
+	// Create the pod
+	return nil
+}
+
+func (n *NodeMigrator) getNodeInfo() error {
+	output, err := execNodetool(n.NodetoolPath, "info")
+	if err != nil {
+		return err
+	}
+
+	lines := strings.Split(output, "\n")
+	for _, line := range lines {
+		columns := strings.Split(line, ":")
+		if len(columns) > 1 {
+			fieldName := strings.Trim(columns[0], " ")
+			fieldValue := columns[1][1:]
+			switch fieldName {
+			case "ID":
+				n.HostID = fieldValue
+			case "Rack":
+				n.Rack = fieldValue
+			case "Data Center":
+				n.Datacenter = fieldValue
+			}
+		}
+	}
+
+	configMap := &corev1.ConfigMap{}
+	configMapKey := types.NamespacedName{Name: configMapName(n.Datacenter), Namespace: n.Namespace}
+	if err := n.Client.Get(context.TODO(), configMapKey, configMap); err != nil {
+		return err
+	}
+
+	ordinalNumber, found := configMap.Data[n.HostID]
+	if !found {
+		return fmt.Errorf("this node was not part of the init process")
+	}
+	n.Ordinal = ordinalNumber
+
+	fmt.Printf("NodeMigrator: %v\n", n)
+
+	return nil
+}
+
 func (n *NodeMigrator) getPodName() string {
-	return fmt.Sprintf("%s-%s-%s-sts-%d", cassdcapi.CleanupForKubernetes(n.Cluster), n.Datacenter, n.Rack, n.Ordinal)
+	return fmt.Sprintf("%s-%s-%s-sts-%s", cassdcapi.CleanupForKubernetes(n.Cluster), n.Datacenter, n.Rack, n.Ordinal)
 }
 
 func (n *NodeMigrator) isSeed() bool {

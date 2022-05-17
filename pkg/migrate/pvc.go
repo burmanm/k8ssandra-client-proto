@@ -6,11 +6,15 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	cassdcapi "github.com/k8ssandra/cass-operator/apis/cassandra/v1beta1"
 )
 
 type NodeMigrator struct {
+	client.Client
+	NodetoolPath string
+
 	// Nodetool describecluster has this information (cluster name)
 	// Verify we use the same cleanupForKubernetesAPI like cass-operator would (exposed in the apis/v1beta1)
 	Cluster string
@@ -20,8 +24,9 @@ type NodeMigrator struct {
 	Rack       string
 
 	KubeNode  string
-	Ordinal   int
+	Ordinal   string
 	Namespace string
+	HostID    string
 }
 
 func (n *NodeMigrator) CreatePVC(dataDirectory string) *corev1.PersistentVolumeClaim {
@@ -111,11 +116,11 @@ func (n *NodeMigrator) CreatePV(dataDirectory string) *corev1.PersistentVolume {
 
 func (n *NodeMigrator) getPVName(dataDirectory string) string {
 	// TODO Fix this..
-	return fmt.Sprintf("%s-%d", dataDirectory, n.Ordinal)
+	return fmt.Sprintf("%s-%s", dataDirectory, n.Ordinal)
 }
 
 func (n *NodeMigrator) getPVCName(dataDirectory string) string {
-	return fmt.Sprintf("%s-%s-%s-%s-sts-%d", dataDirectory, cassdcapi.CleanupForKubernetes(n.Cluster), n.Datacenter, n.Rack, n.Ordinal)
+	return fmt.Sprintf("%s-%s-%s-%s-sts-%s", dataDirectory, cassdcapi.CleanupForKubernetes(n.Cluster), n.Datacenter, n.Rack, n.Ordinal)
 }
 
 /*

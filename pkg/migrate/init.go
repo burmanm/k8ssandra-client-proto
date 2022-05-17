@@ -64,7 +64,8 @@ func NewClusterMigrator(namespace string) (*ClusterMigrator, error) {
 	}
 
 	return &ClusterMigrator{
-		Client: client,
+		Client:    client,
+		Namespace: namespace,
 	}, nil
 }
 
@@ -253,7 +254,7 @@ func (c *ClusterMigrator) CreateClusterConfigMap() error {
 	// fmt.Printf("Parsed the following:\nRack: %s\nDatacenter: %s\nCluster: %s\n", c.Rack, c.Datacenter, c.Cluster)
 
 	configMap := &corev1.ConfigMap{}
-	configMapKey := types.NamespacedName{Name: c.configMapName(), Namespace: c.Namespace}
+	configMapKey := types.NamespacedName{Name: configMapName(c.Datacenter), Namespace: c.Namespace}
 	if err := c.Client.Get(context.TODO(), configMapKey, configMap); err != nil && !errors.IsNotFound(err) {
 		return err
 	} else if errors.IsNotFound(err) {
@@ -262,7 +263,7 @@ func (c *ClusterMigrator) CreateClusterConfigMap() error {
 			return err
 		}
 
-		configMap.ObjectMeta.Name = c.configMapName()
+		configMap.ObjectMeta.Name = configMapName(c.Datacenter)
 		configMap.ObjectMeta.Namespace = c.Namespace
 		infoMap := map[string]string{
 			"serverVersion": c.ServerVersion,
@@ -282,8 +283,8 @@ func (c *ClusterMigrator) CreateClusterConfigMap() error {
 	return nil
 }
 
-func (c *ClusterMigrator) configMapName() string {
-	return fmt.Sprintf("%s-config", cassdcapi.CleanupForKubernetes(c.Cluster))
+func configMapName(datacenter string) string {
+	return fmt.Sprintf("%s-migrate-config", cassdcapi.CleanupForKubernetes(datacenter))
 }
 
 func (c *ClusterMigrator) additionalSeedServiceName() string {
