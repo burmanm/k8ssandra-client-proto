@@ -2,11 +2,13 @@ package migrate
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"net"
 	"os/exec"
 	"regexp"
 	"sort"
+	"strconv"
 	"strings"
 
 	"github.com/burmanm/k8ssandra-client/pkg/cassdcutil"
@@ -50,6 +52,9 @@ type ClusterMigrator struct {
 	KubeNode  string
 	Ordinal   int
 	Namespace string
+
+	ServerType    string
+	ServerVersion string
 }
 
 func NewClusterMigrator(namespace string) (*ClusterMigrator, error) {
@@ -152,9 +157,11 @@ func (c *ClusterMigrator) CreateSeedServices() error {
 	}
 
 	// TODO Verify endpoints is updated with all the possible seeds
-	_, err = c.endpointsForAdditionalSeeds(seeds)
-	if err != nil {
-		return err
+	if len(seeds) > 0 {
+		_, err := c.endpointsForAdditionalSeeds(seeds)
+		if err != nil {
+			return err
+		}
 	}
 
 	// TODO The existing installation should have seeds in the memory / in the cassandra.yaml
@@ -204,6 +211,22 @@ func (c *ClusterMigrator) CreateClusterConfigMap() error {
 						c.Datacenter = fieldValue
 					} else if fieldName == "RACK" {
 						c.Rack = fieldValue
+					} else if fieldName == "X_11_PADDING" {
+						// DSE 6.8
+						dseInfo := make(map[string]string)
+						err = json.Unmarshal([]byte(fieldValue), &dseInfo)
+						if err != nil {
+							return err
+						}
+						c.ServerType = "dse"
+						c.ServerVersion = dseInfo["dse_version"]
+						// We could parse graph / search / etc settings here also for DSE
+					} else if fieldName == "RELEASE_VERSION" {
+						if c.ServerType == "" {
+							// We haven't parsed DSE information yet, so we can safely parse this
+							c.ServerType = "cassandra"
+							c.ServerVersion = fieldValue
+						}
 					}
 				}
 			}
@@ -227,9 +250,40 @@ func (c *ClusterMigrator) CreateClusterConfigMap() error {
 	fields := strings.Split(lines[1], ":")
 	c.Cluster = fields[1][1:]
 
-	fmt.Printf("Parsed the following:\nRack: %s\nDatacenter: %s\nCluster: %s\n", c.Rack, c.Datacenter, c.Cluster)
+	// fmt.Printf("Parsed the following:\nRack: %s\nDatacenter: %s\nCluster: %s\n", c.Rack, c.Datacenter, c.Cluster)
+
+	configMap := &corev1.ConfigMap{}
+	configMapKey := types.NamespacedName{Name: c.configMapName(), Namespace: c.Namespace}
+	if err := c.Client.Get(context.TODO(), configMapKey, configMap); err != nil && !errors.IsNotFound(err) {
+		return err
+	} else if errors.IsNotFound(err) {
+		nodeInfos, err := c.retrieveStatusFromNodetool()
+		if err != nil {
+			return err
+		}
+
+		configMap.ObjectMeta.Name = c.configMapName()
+		configMap.ObjectMeta.Namespace = c.Namespace
+		infoMap := map[string]string{
+			"serverVersion": c.ServerVersion,
+			"serverType":    c.ServerType,
+		}
+		i := 0
+		// Create ordinal information for the next stages
+		for _, nodeInfo := range nodeInfos {
+			infoMap[nodeInfo.HostId] = strconv.Itoa(i)
+		}
+		configMap.Data = infoMap
+		if err := c.Client.Create(context.TODO(), configMap); err != nil {
+			return err
+		}
+	}
 
 	return nil
+}
+
+func (c *ClusterMigrator) configMapName() string {
+	return fmt.Sprintf("%s-config", cassdcapi.CleanupForKubernetes(c.Cluster))
 }
 
 func (c *ClusterMigrator) additionalSeedServiceName() string {
@@ -288,7 +342,6 @@ func (c *ClusterMigrator) newAdditionalSeedService() (*corev1.Service, error) {
 }
 
 func (c *ClusterMigrator) endpointsForAdditionalSeeds(seeds []string) (*corev1.Endpoints, error) {
-
 	endpoints := &corev1.Endpoints{}
 	endpointsName := types.NamespacedName{Name: c.additionalSeedServiceName(), Namespace: c.Namespace}
 	if err := c.Client.Get(context.TODO(), endpointsName, endpoints); err != nil && !errors.IsNotFound(err) {
@@ -314,6 +367,10 @@ func (c *ClusterMigrator) endpointsForAdditionalSeeds(seeds []string) (*corev1.E
 			},
 		}
 
+		if err = c.Client.Create(context.TODO(), &endpoints); err != nil {
+			return nil, err
+		}
+
 		return &endpoints, nil
 	}
 
@@ -330,4 +387,52 @@ func (c *ClusterMigrator) endpointsForAdditionalSeeds(seeds []string) (*corev1.E
 	// }
 
 	return endpoints, nil
+}
+
+type NodetoolNodeInfo struct {
+	Status  string
+	State   string
+	Address string
+	HostId  string
+	Rack    string
+}
+
+// From cass-operator tests
+func (c *ClusterMigrator) retrieveStatusFromNodetool() ([]NodetoolNodeInfo, error) {
+	output, err := execNodetool(c.NodetoolPath, "status")
+	if err != nil {
+		return nil, err
+	}
+
+	getFullName := func(s string) string {
+		status, ok := map[string]string{
+			"U": "up",
+			"D": "down",
+			"N": "normal",
+			"L": "leaving",
+			"J": "joining",
+			"M": "moving",
+			"S": "stopped",
+		}[string(s)]
+
+		if !ok {
+			status = s
+		}
+		return status
+	}
+
+	nodeTexts := regexp.MustCompile(`(?m)^.*(([0-9a-fA-F]+-){4}([0-9a-fA-F]+)).*$`).FindAllString(output, -1)
+	nodeInfo := []NodetoolNodeInfo{}
+	for _, nodeText := range nodeTexts {
+		comps := regexp.MustCompile(`[[:space:]]+`).Split(strings.TrimSpace(nodeText), -1)
+		nodeInfo = append(nodeInfo,
+			NodetoolNodeInfo{
+				Status:  getFullName(string(comps[0][0])),
+				State:   getFullName(string(comps[0][1])),
+				Address: comps[1],
+				HostId:  comps[len(comps)-2],
+				Rack:    comps[len(comps)-1],
+			})
+	}
+	return nodeInfo, nil
 }
