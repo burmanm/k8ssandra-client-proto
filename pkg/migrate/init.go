@@ -99,7 +99,7 @@ func (c *ClusterMigrator) InitCluster() error {
 
 func (c *ClusterMigrator) getSeeds() ([]string, error) {
 	// nodetool getseeds returns seeds other than the current one (seed labeling can't be done here)
-	seedsOutput, err := execNodetool(c.NodetoolPath, "getseeeds")
+	seedsOutput, err := execNodetool(c.NodetoolPath, "getseeds")
 	if err != nil {
 		return nil, err
 	}
@@ -124,7 +124,7 @@ func (c *ClusterMigrator) CreateSeedServices() error {
 	if err != nil {
 		if errors.IsNotFound(err) {
 			// Create the service
-			if additionalSeedService, err = c.newAdditionalSeedService(); err != nil {
+			if _, err = c.newAdditionalSeedService(); err != nil {
 				return err
 			}
 		} else {
@@ -138,12 +138,23 @@ func (c *ClusterMigrator) CreateSeedServices() error {
 	if err != nil {
 		if errors.IsNotFound(err) {
 			// Create the service
-			if seedService, err = c.newSeedService(); err != nil {
+			if _, err = c.newSeedService(); err != nil {
 				return err
 			}
 		} else {
 			return err
 		}
+	}
+
+	seeds, err := c.getSeeds()
+	if err != nil {
+		return err
+	}
+
+	// TODO Verify endpoints is updated with all the possible seeds
+	_, err = c.endpointsForAdditionalSeeds(seeds)
+	if err != nil {
+		return err
 	}
 
 	// TODO The existing installation should have seeds in the memory / in the cassandra.yaml
