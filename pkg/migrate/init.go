@@ -71,34 +71,32 @@ func NewClusterMigrator(namespace, cassandraHome string) (*ClusterMigrator, erro
 	}, nil
 }
 
-func (c *ClusterMigrator) InitCluster() error {
-	p, err := pterm.DefaultProgressbar.WithTitle("Parsing cluster details").WithShowCount(false).WithShowPercentage(false).Start()
-	if err != nil {
-		return err
-	}
+func (c *ClusterMigrator) InitCluster(p *pterm.SpinnerPrinter) error {
+	// p, err := pterm.DefaultProgressbar.WithTitle("Parsing cluster details").WithShowCount(false).WithShowPercentage(false).Start()
+	// if err != nil {
+	// 	return err
+	// }
 
 	// TODO Replace with BubbleTea
 
-	p.UpdateTitle("Fetching cluster details")
-	err = c.CreateClusterConfigMap()
+	p.UpdateText("Fetching cluster details")
+	err := c.CreateClusterConfigMap()
 	if err != nil {
 		fmt.Printf("Failed to get cluster details: %v\n", err)
 		// pterm.Fatal.Println("Failed to get cluster details")
 		return err
 	}
 
-	pterm.Success.Println("Cassandra cluster details stored to Kubernetes")
+	pterm.Success.Println("Fetched cluster details and stored them to Kubernetes")
 
-	p.UpdateTitle("Fetching cluster seeds")
+	p.UpdateText("Fetching seeds")
 	err = c.CreateSeedServices()
 	if err != nil {
 		fmt.Printf("Failed to get cluster seeds: %v\n", err)
 		pterm.Fatal.Println("Failed to get cluster seeds")
 		return err
 	}
-	pterm.Success.Println("Created seeds service")
-
-	p.Stop()
+	pterm.Success.Println("Created seed services")
 
 	// pterm.Info.Println("You can now import nodes to the Kubernetes")
 

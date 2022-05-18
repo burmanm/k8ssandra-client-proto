@@ -10,6 +10,7 @@ import (
 	"github.com/burmanm/k8ssandra-client/pkg/cassdcutil"
 	cassdcapi "github.com/k8ssandra/cass-operator/apis/cassandra/v1beta1"
 	"github.com/k8ssandra/cass-operator/pkg/images"
+	"github.com/pterm/pterm"
 
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -38,9 +39,9 @@ func NewNodeMigrator(namespace, cassandraHome string) (*NodeMigrator, error) {
 	}, nil
 }
 
-func (n *NodeMigrator) MigrateNode() error {
+func (n *NodeMigrator) MigrateNode(p *pterm.SpinnerPrinter) error {
 	// TODO Use the ButterTea or something for prettier output
-	fmt.Printf("Getting node information\n")
+	p.UpdateText("Getting Cassandra node information")
 
 	// Fetch current node information for cluster+datacenter+rack+hostUUID
 	// Fetch the clusterConfig for ordinal selection
@@ -48,31 +49,40 @@ func (n *NodeMigrator) MigrateNode() error {
 	if err != nil {
 		return err
 	}
+	pterm.Success.Println("Gathered information from local Cassandra node")
 
 	// Drain and shutdown the current node
-	fmt.Printf("Draining and shutting down the current node\n")
+	p.UpdateText("Draining and shutting down the current node")
 	err = n.drainAndShutdownNode()
 	if err != nil {
 		return err
 	}
+	pterm.Success.Println("Local Cassandra node drained and shutdown")
 
 	// Parse configuration..
 
 	// Create PVC + PV
-	fmt.Printf("Mounting directories to Kubernetes\n")
+	p.UpdateText("Mounting directories to Kubernetes")
 	err = n.createVolumeMounts()
 	if err != nil {
 		return err
 	}
+	pterm.Success.Println("Mounted local directories to Kubernetes")
 
 	// Create the pod
+	p.UpdateText("Creating pod that runs Cassandra in Kubernetes")
 	images.ParseImageConfig("/home/michael/projects/git/datastax/cass-operator/config/manager/image_config.yaml")
 	err = n.CreatePod()
 	if err != nil {
 		return err
 	}
 
+	pterm.Success.Println("Created Cassandra pod to the Kubernetes")
+
 	// Run startCassandra on the node
+	p.UpdateText("Starting Cassandra node on the Kubernetes cluster")
+	pterm.Warning.Println("Failed to start Cassandra node")
+
 	return nil
 }
 
