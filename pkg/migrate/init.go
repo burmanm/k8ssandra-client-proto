@@ -116,6 +116,21 @@ func (c *ClusterMigrator) getSeeds() ([]string, error) {
 		return nil, err
 	}
 
+	/*
+		TODO Parse from cassandra.yaml:
+
+		seed_provider:
+		  # Addresses of hosts that are deemed contact points.
+		  # Cassandra nodes use this list of hosts to find each other and learn
+		  # the topology of the ring.  You must change this if you are running
+		  # multiple nodes!
+		  - class_name: org.apache.cassandra.locator.SimpleSeedProvider
+		    parameters:
+		      # seeds is actually a comma-delimited list of addresses.
+		      # Ex: "<ip1>,<ip2>,<ip3>"
+		      - seeds: "127.0.0.1:7000"
+	*/
+
 	re := regexp.MustCompile(`[0-9]+[.][0-9]+[.][0-9]+[.][0-9]+`)
 	seeds := re.FindAllString(seedsOutput, -1)
 	sort.Strings(seeds)

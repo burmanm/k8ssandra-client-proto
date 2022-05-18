@@ -49,10 +49,6 @@ func (n *NodeMigrator) MigrateNode() error {
 		return err
 	}
 
-	if n.Cluster == "" {
-		return fmt.Errorf("no cluster was parsed, exiting\n")
-	}
-
 	// Drain and shutdown the current node
 	fmt.Printf("Draining and shutting down the current node\n")
 	err = n.drainAndShutdownNode()
@@ -70,6 +66,11 @@ func (n *NodeMigrator) MigrateNode() error {
 	}
 
 	// Create the pod
+	images.ParseImageConfig("/home/michael/projects/git/datastax/cass-operator/config/manager/image_config.yaml")
+	err = n.CreatePod()
+	if err != nil {
+		return err
+	}
 
 	// Run startCassandra on the node
 	return nil
@@ -163,20 +164,25 @@ func (n *NodeMigrator) isSeed() bool {
 	return true
 }
 
-func (n *NodeMigrator) CreatePod() (*corev1.Pod, error) {
+func (n *NodeMigrator) CreatePod() error {
 	enableServiceLinks := true
 
 	containers, err := n.buildContainers()
 	if err != nil {
-		return nil, err
+		return err
 	}
 
 	initContainers, err := n.buildInitContainers()
 	if err != nil {
-		return nil, err
+		return err
 	}
 
-	return &corev1.Pod{
+	volumes, err := n.buildVolumes()
+	if err != nil {
+		return err
+	}
+
+	pod := &corev1.Pod{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      n.getPodName(),
 			Namespace: n.Namespace,
@@ -197,9 +203,42 @@ func (n *NodeMigrator) CreatePod() (*corev1.Pod, error) {
 			// SecurityContext should mimic whatever is running currently the DSE / Cassandra installation
 			SecurityContext: &corev1.PodSecurityContext{},
 			Tolerations:     []corev1.Toleration{},
-			Volumes:         []corev1.Volume{},
+			Volumes:         volumes,
 		},
-	}, nil
+	}
+
+	if err := n.Client.Create(context.TODO(), pod); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func (n *NodeMigrator) buildVolumes() ([]corev1.Volume, error) {
+	volumes := []corev1.Volume{}
+
+	for _, source := range []string{"server-data", "server-config", "server-logs"} {
+		volume := corev1.Volume{
+			Name: source,
+			VolumeSource: corev1.VolumeSource{
+				PersistentVolumeClaim: &corev1.PersistentVolumeClaimVolumeSource{
+					ClaimName: n.getPVCName(source),
+				},
+			},
+		}
+		volumes = append(volumes, volume)
+	}
+	vServerEncryption := corev1.Volume{
+		Name: "encryption-cred-storage",
+		VolumeSource: corev1.VolumeSource{
+			Secret: &corev1.SecretVolumeSource{
+				SecretName: fmt.Sprintf("%s-keystore", n.Datacenter),
+			},
+		},
+	}
+	volumes = append(volumes, vServerEncryption)
+
+	return volumes, nil
 }
 
 // This ensure that the server-config-builder init container is properly configured.
@@ -287,7 +326,8 @@ func (n *NodeMigrator) buildInitContainers() ([]corev1.Container, error) {
 // }
 
 func (n *NodeMigrator) makeImage() (string, error) {
-	return images.GetCassandraImage(n.ServerType, n.ServerVersion)
+	// return images.GetCassandraImage(n.ServerType, n.ServerVersion)
+	return images.GetCassandraImage(n.ServerType, "4.0.3")
 }
 
 // If values are provided in the matching containers in the
