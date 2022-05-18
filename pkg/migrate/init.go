@@ -82,7 +82,7 @@ func (c *ClusterMigrator) InitCluster(p *pterm.SpinnerPrinter) error {
 	p.UpdateText("Fetching cluster details")
 	err := c.CreateClusterConfigMap()
 	if err != nil {
-		fmt.Printf("Failed to get cluster details: %v\n", err)
+		// fmt.Printf("Failed to get cluster details: %v\n", err)
 		// pterm.Fatal.Println("Failed to get cluster details")
 		return err
 	}
@@ -92,8 +92,8 @@ func (c *ClusterMigrator) InitCluster(p *pterm.SpinnerPrinter) error {
 	p.UpdateText("Fetching seeds")
 	err = c.CreateSeedServices()
 	if err != nil {
-		fmt.Printf("Failed to get cluster seeds: %v\n", err)
-		pterm.Fatal.Println("Failed to get cluster seeds")
+		// fmt.Printf("Failed to get cluster seeds: %v\n", err)
+		// pterm.Fatal.Println("Failed to get cluster seeds")
 		return err
 	}
 	pterm.Success.Println("Created seed services")
@@ -308,6 +308,11 @@ func execNodetool(nodetoolPath, command string) (string, error) {
 	nodetoolLocation := fmt.Sprintf("%s/nodetool", nodetoolPath)
 	out, err := exec.Command(nodetoolLocation, command).Output()
 	if err != nil {
+		if ee, ok := err.(*exec.ExitError); ok {
+			if ee.ExitCode() == 1 {
+				return "", fmt.Errorf("unable to execute nodetool against localhost")
+			}
+		}
 		return "", err
 	}
 

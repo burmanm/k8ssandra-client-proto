@@ -4,6 +4,7 @@ import (
 	"fmt"
 
 	"github.com/burmanm/k8ssandra-client/pkg/migrate"
+	"github.com/pterm/pterm"
 	"github.com/spf13/cobra"
 	"k8s.io/cli-runtime/pkg/genericclioptions"
 )
@@ -41,10 +42,11 @@ func NewInitCmd(streams genericclioptions.IOStreams) *cobra.Command {
 	o := newOptions(streams)
 
 	cmd := &cobra.Command{
-		Use:          "init [flags]",
-		Short:        "initialize importing Cassandra installation to Kubernetes",
-		Example:      fmt.Sprintf(importExample, "kubectl k8ssandra"),
-		SilenceUsage: true,
+		Use:           "init [flags]",
+		Short:         "initialize importing Cassandra installation to Kubernetes",
+		Example:       fmt.Sprintf(importExample, "kubectl k8ssandra"),
+		SilenceUsage:  true,
+		SilenceErrors: true,
 		RunE: func(c *cobra.Command, args []string) error {
 			if err := o.Complete(c, args); err != nil {
 				return err
@@ -89,9 +91,9 @@ func (c *options) Validate() error {
 
 // Run removes the finalizers for a release X in the given namespace
 func (c *options) Run() error {
+	spinnerLiveText, _ := pterm.DefaultSpinner.Start("Gathering information for node migration...")
 	migrator, err := migrate.NewClusterMigrator(c.namespace, c.cassandraHome)
 	if err != nil {
-		fmt.Printf("ClusterMigrator: %v\n", err)
 		return err
 	}
 
@@ -99,15 +101,14 @@ func (c *options) Run() error {
 		migrator.NodetoolPath = c.nodetoolPath
 	}
 
-	err = migrator.InitCluster()
+	err = migrator.InitCluster(spinnerLiveText)
 	if err != nil {
-		fmt.Printf("InitCluster: %v\n", err)
+		pterm.Error.Printf("Failed to connect to local Cassandra node to fetch required information: %v", err)
 		return err
 	}
 
 	n, err := migrate.NewNodeMigrator(c.namespace, c.cassandraHome)
 	if err != nil {
-		fmt.Printf("NodeMigrator: %v\n", err)
 		return err
 	}
 
@@ -115,11 +116,13 @@ func (c *options) Run() error {
 		n.NodetoolPath = c.nodetoolPath
 	}
 
-	err = n.MigrateNode()
+	err = n.MigrateNode(spinnerLiveText)
 	if err != nil {
-		fmt.Printf("MigrateNode: %v\n", err)
+		pterm.Error.Printf("Failed to migrate local Cassandra node to Kubernetes: %v", err)
 		return err
 	}
+
+	spinnerLiveText.Success("Cassandra node has been successfully migrated to Kubernetes")
 
 	return nil
 }
