@@ -1,6 +1,7 @@
 package migrate
 
 import (
+	"context"
 	"fmt"
 
 	corev1 "k8s.io/api/core/v1"
@@ -13,7 +14,8 @@ import (
 
 type NodeMigrator struct {
 	client.Client
-	NodetoolPath string
+	NodetoolPath  string
+	CassandraHome string
 
 	// Nodetool describecluster has this information (cluster name)
 	// Verify we use the same cleanupForKubernetesAPI like cass-operator would (exposed in the apis/v1beta1)
@@ -27,9 +29,35 @@ type NodeMigrator struct {
 	Ordinal   string
 	Namespace string
 	HostID    string
+
+	ServerType    string
+	ServerVersion string
 }
 
-func (n *NodeMigrator) CreatePVC(dataDirectory string) *corev1.PersistentVolumeClaim {
+func (n *NodeMigrator) parseDataPath(dataDir string) string {
+	// TODO Parse from configuration directory
+	return fmt.Sprintf("%s/%s", n.CassandraHome, dataDir[7:])
+}
+
+func (n *NodeMigrator) createVolumeMounts() error {
+	// dataDir := n.parseDataDirectory()
+
+	for _, dataDir := range []string{"server-logs", "server-config", "server-data"} {
+		pv := n.createPV(dataDir, n.parseDataPath(dataDir))
+		if err := n.Client.Create(context.TODO(), pv); err != nil {
+			return err
+		}
+
+		pvc := n.createPVC(dataDir)
+		if err := n.Client.Create(context.TODO(), pvc); err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+func (n *NodeMigrator) createPVC(dataDirectory string) *corev1.PersistentVolumeClaim {
 	volumeMode := new(corev1.PersistentVolumeMode)
 	*volumeMode = corev1.PersistentVolumeFilesystem
 	storageClassName := "local-path"
@@ -61,7 +89,7 @@ func (n *NodeMigrator) CreatePVC(dataDirectory string) *corev1.PersistentVolumeC
 	}
 }
 
-func (n *NodeMigrator) CreatePV(dataDirectory string) *corev1.PersistentVolume {
+func (n *NodeMigrator) createPV(dataDirectory, dataPath string) *corev1.PersistentVolume {
 	hostPathType := new(corev1.HostPathType)
 	*hostPathType = corev1.HostPathDirectory
 	volumeMode := new(corev1.PersistentVolumeMode)
@@ -88,7 +116,7 @@ func (n *NodeMigrator) CreatePV(dataDirectory string) *corev1.PersistentVolume {
 			PersistentVolumeSource: corev1.PersistentVolumeSource{
 				HostPath: &corev1.HostPathVolumeSource{
 					Type: hostPathType,
-					Path: dataDirectory,
+					Path: dataPath,
 				},
 			},
 			PersistentVolumeReclaimPolicy: corev1.PersistentVolumeReclaimRetain,
@@ -116,7 +144,7 @@ func (n *NodeMigrator) CreatePV(dataDirectory string) *corev1.PersistentVolume {
 
 func (n *NodeMigrator) getPVName(dataDirectory string) string {
 	// TODO Fix this..
-	return fmt.Sprintf("%s-%s", dataDirectory, n.Ordinal)
+	return fmt.Sprintf("pvc-%s", n.getPVCName(dataDirectory))
 }
 
 func (n *NodeMigrator) getPVCName(dataDirectory string) string {

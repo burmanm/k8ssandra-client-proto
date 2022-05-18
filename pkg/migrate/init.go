@@ -41,7 +41,8 @@ const (
 
 type ClusterMigrator struct {
 	client.Client
-	NodetoolPath string
+	NodetoolPath  string
+	CassandraHome string
 
 	// TODO Merge ClusterMigrator and NodeMigrator?
 
@@ -57,15 +58,16 @@ type ClusterMigrator struct {
 	ServerVersion string
 }
 
-func NewClusterMigrator(namespace string) (*ClusterMigrator, error) {
+func NewClusterMigrator(namespace, cassandraHome string) (*ClusterMigrator, error) {
 	client, err := cassdcutil.GetClientInNamespace(namespace)
 	if err != nil {
 		return nil, err
 	}
 
 	return &ClusterMigrator{
-		Client:    client,
-		Namespace: namespace,
+		Client:        client,
+		Namespace:     namespace,
+		CassandraHome: cassandraHome,
 	}, nil
 }
 
@@ -98,14 +100,18 @@ func (c *ClusterMigrator) InitCluster() error {
 
 	p.Stop()
 
-	pterm.Info.Println("You can now import nodes to the Kubernetes")
+	// pterm.Info.Println("You can now import nodes to the Kubernetes")
+
+	// TODO After nodeMigrations:
+
+	// Create CassandraDatacenter with the known data + calculate how many nodes as size
 
 	return nil
 }
 
 func (c *ClusterMigrator) getSeeds() ([]string, error) {
 	// nodetool getseeds returns seeds other than the current one (seed labeling can't be done here)
-	seedsOutput, err := execNodetool(c.NodetoolPath, "getseeds")
+	seedsOutput, err := execNodetool(c.getNodetoolPath(), "getseeds")
 	if err != nil {
 		return nil, err
 	}
@@ -172,27 +178,8 @@ func (c *ClusterMigrator) CreateSeedServices() error {
 }
 
 func (c *ClusterMigrator) CreateClusterConfigMap() error {
-	/*
-		➜  cassandra git:(trunk) ✗ bin/nodetool gossipinfo
-		localhost/127.0.0.1
-		generation:1652681225
-		heartbeat:104
-		STATUS:59:NORMAL,-1742041081749066901
-		LOAD:91:106868.0
-		SCHEMA:52:54e17321-3f2e-37ca-9b08-d91ba7bdd369
-		DC:8:datacenter1
-		RACK:10:rack1
-		RELEASE_VERSION:5:4.2-SNAPSHOT
-		RPC_ADDRESS:4:127.0.0.1
-		NET_VERSION:1:12
-		HOST_ID:2:da75d97a-d940-43d5-974c-91ee8db8a95e
-		RPC_READY:61:true
-		NATIVE_ADDRESS_AND_PORT:3:127.0.0.1:9042
-		STATUS_WITH_PORT:58:NORMAL,-1742041081749066901
-		SSTABLE_VERSIONS:6:big-nb
-		TOKENS:57:<hidden>
-	*/
-	output, err := execNodetool(c.NodetoolPath, "gossipinfo")
+	// TODO Or should we use nodetool info first and then just find the correct one?
+	output, err := execNodetool(c.getNodetoolPath(), "gossipinfo")
 	if err != nil {
 		return err
 	}
@@ -208,11 +195,18 @@ func (c *ClusterMigrator) CreateClusterConfigMap() error {
 				if len(columns) > 2 {
 					fieldName := columns[0]
 					fieldValue := columns[2]
-					if fieldName == "DC" {
+					switch fieldName {
+					case "DC":
 						c.Datacenter = fieldValue
-					} else if fieldName == "RACK" {
+					case "RACK":
 						c.Rack = fieldValue
-					} else if fieldName == "X_11_PADDING" {
+					case "RELEASE_VERSION":
+						if c.ServerType == "" {
+							// We haven't parsed DSE information yet, so we can safely parse this
+							c.ServerType = "cassandra"
+							c.ServerVersion = fieldValue
+						}
+					case "X_11_PADDING":
 						// DSE 6.8
 						dseInfo := make(map[string]string)
 						err = json.Unmarshal([]byte(fieldValue), &dseInfo)
@@ -222,18 +216,12 @@ func (c *ClusterMigrator) CreateClusterConfigMap() error {
 						c.ServerType = "dse"
 						c.ServerVersion = dseInfo["dse_version"]
 						// We could parse graph / search / etc settings here also for DSE
-					} else if fieldName == "RELEASE_VERSION" {
-						if c.ServerType == "" {
-							// We haven't parsed DSE information yet, so we can safely parse this
-							c.ServerType = "cassandra"
-							c.ServerVersion = fieldValue
-						}
 					}
 				}
 			}
 		} else if strings.HasPrefix(line, "/") {
 			if detailsStarted {
-				// We parsed the remaining fields
+				// We parsed the remaining fields, this is starting next node
 				break
 			}
 		} else {
@@ -242,7 +230,7 @@ func (c *ClusterMigrator) CreateClusterConfigMap() error {
 	}
 
 	// ClusterName
-	clusterInfo, err := execNodetool(c.NodetoolPath, "describecluster")
+	clusterInfo, err := execNodetool(c.getNodetoolPath(), "describecluster")
 	if err != nil {
 		return err
 	}
@@ -266,6 +254,7 @@ func (c *ClusterMigrator) CreateClusterConfigMap() error {
 		configMap.ObjectMeta.Name = configMapName(c.Datacenter)
 		configMap.ObjectMeta.Namespace = c.Namespace
 		infoMap := map[string]string{
+			"cluster":       c.Cluster,
 			"serverVersion": c.ServerVersion,
 			"serverType":    c.ServerType,
 		}
@@ -293,6 +282,13 @@ func (c *ClusterMigrator) additionalSeedServiceName() string {
 
 func (c *ClusterMigrator) seedServiceName() string {
 	return cassdcapi.CleanupForKubernetes(c.Cluster) + "-seed-service"
+}
+
+func (c *ClusterMigrator) getNodetoolPath() string {
+	if c.NodetoolPath != "" {
+		return c.NodetoolPath
+	}
+	return fmt.Sprintf("%s/bin", c.CassandraHome)
 }
 
 func execNodetool(nodetoolPath, command string) (string, error) {
@@ -400,7 +396,7 @@ type NodetoolNodeInfo struct {
 
 // From cass-operator tests
 func (c *ClusterMigrator) retrieveStatusFromNodetool() ([]NodetoolNodeInfo, error) {
-	output, err := execNodetool(c.NodetoolPath, "status")
+	output, err := execNodetool(c.getNodetoolPath(), "status")
 	if err != nil {
 		return nil, err
 	}

@@ -14,7 +14,7 @@ var (
 	%[1]s import init [<args>]
 
 	# Use nodetool from outside $PATH
-	%[1]s import init --nodetool-path=$HOME/bin/nodetool
+	%[1]s import init --cassandra-home=$CASSANDRA_HOME
 
 	`
 	// errNotEnoughParameters = fmt.Errorf("not enough parameters to run nodetool")
@@ -26,6 +26,7 @@ type options struct {
 	targetVersion string
 	namespace     string
 	nodetoolPath  string
+	cassandraHome string
 }
 
 func newOptions(streams genericclioptions.IOStreams) *options {
@@ -60,7 +61,8 @@ func NewInitCmd(streams genericclioptions.IOStreams) *cobra.Command {
 	}
 
 	fl := cmd.Flags()
-	fl.StringVarP(&o.nodetoolPath, "nodetool-path", "p", "", "path to nodetool executable")
+	fl.StringVarP(&o.nodetoolPath, "nodetool-path", "p", "", "path to nodetool executable directory")
+	fl.StringVarP(&o.cassandraHome, "cassandra-home", "c", "", "path to cassandra/DSE installation directory")
 	o.configFlags.AddFlags(fl)
 	return cmd
 }
@@ -79,13 +81,17 @@ func (c *options) Complete(cmd *cobra.Command, args []string) error {
 
 // Validate ensures that all required arguments and flag values are provided
 func (c *options) Validate() error {
+	if c.cassandraHome == "" {
+		return fmt.Errorf("cassandra-home is required")
+	}
 	return nil
 }
 
 // Run removes the finalizers for a release X in the given namespace
 func (c *options) Run() error {
-	migrator, err := migrate.NewClusterMigrator(c.namespace)
+	migrator, err := migrate.NewClusterMigrator(c.namespace, c.cassandraHome)
 	if err != nil {
+		fmt.Printf("ClusterMigrator: %v\n", err)
 		return err
 	}
 
@@ -95,16 +101,23 @@ func (c *options) Run() error {
 
 	err = migrator.InitCluster()
 	if err != nil {
+		fmt.Printf("InitCluster: %v\n", err)
 		return err
 	}
 
-	n, err := migrate.NewNodeMigrator(c.namespace, c.nodetoolPath)
+	n, err := migrate.NewNodeMigrator(c.namespace, c.cassandraHome)
 	if err != nil {
+		fmt.Printf("NodeMigrator: %v\n", err)
 		return err
+	}
+
+	if c.nodetoolPath != "" {
+		n.NodetoolPath = c.nodetoolPath
 	}
 
 	err = n.MigrateNode()
 	if err != nil {
+		fmt.Printf("MigrateNode: %v\n", err)
 		return err
 	}
 

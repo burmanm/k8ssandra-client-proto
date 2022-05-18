@@ -3,6 +3,7 @@ package migrate
 import (
 	"context"
 	"fmt"
+	"os/exec"
 	"strconv"
 	"strings"
 
@@ -24,34 +25,65 @@ const (
 	SystemLoggerContainerName            = "server-system-logger"
 )
 
-func NewNodeMigrator(namespace, nodetoolPath string) (*NodeMigrator, error) {
+func NewNodeMigrator(namespace, cassandraHome string) (*NodeMigrator, error) {
 	client, err := cassdcutil.GetClientInNamespace(namespace)
 	if err != nil {
 		return nil, err
 	}
 
 	return &NodeMigrator{
-		Client:       client,
-		Namespace:    namespace,
-		NodetoolPath: nodetoolPath,
+		Client:        client,
+		Namespace:     namespace,
+		CassandraHome: cassandraHome,
 	}, nil
 }
 
 func (n *NodeMigrator) MigrateNode() error {
+	// TODO Use the ButterTea or something for prettier output
+	fmt.Printf("Getting node information\n")
+
+	// Fetch current node information for cluster+datacenter+rack+hostUUID
+	// Fetch the clusterConfig for ordinal selection
 	err := n.getNodeInfo()
 	if err != nil {
 		return err
 	}
-	// Fetch current node information for cluster+datacenter+rack+hostUUID
-	// Fetch the clusterConfig for ordinal selection
+
+	if n.Cluster == "" {
+		return fmt.Errorf("no cluster was parsed, exiting\n")
+	}
+
 	// Drain and shutdown the current node
+	fmt.Printf("Draining and shutting down the current node\n")
+	err = n.drainAndShutdownNode()
+	if err != nil {
+		return err
+	}
+
+	// Parse configuration..
+
 	// Create PVC + PV
+	fmt.Printf("Mounting directories to Kubernetes\n")
+	err = n.createVolumeMounts()
+	if err != nil {
+		return err
+	}
+
 	// Create the pod
+
+	// Run startCassandra on the node
 	return nil
 }
 
+func (n *NodeMigrator) getNodetoolPath() string {
+	if n.NodetoolPath != "" {
+		return n.NodetoolPath
+	}
+	return fmt.Sprintf("%s/bin", n.CassandraHome)
+}
+
 func (n *NodeMigrator) getNodeInfo() error {
-	output, err := execNodetool(n.NodetoolPath, "info")
+	output, err := execNodetool(n.getNodetoolPath(), "info")
 	if err != nil {
 		return err
 	}
@@ -84,10 +116,42 @@ func (n *NodeMigrator) getNodeInfo() error {
 		return fmt.Errorf("this node was not part of the init process")
 	}
 	n.Ordinal = ordinalNumber
+	n.ServerType = configMap.Data["serverType"]
+	n.ServerVersion = configMap.Data["serverVersion"]
+	n.Cluster = configMap.Data["cluster"]
 
-	fmt.Printf("NodeMigrator: %v\n", n)
+	// TODO Verify kubenode
+	kubeNode, err := getLocalKubeNode()
+	if err != nil {
+		return err
+	}
+	n.KubeNode = kubeNode
+
+	// fmt.Printf("NodeMigrator: %v\n", n)
 
 	return nil
+}
+
+func getLocalKubeNode() (string, error) {
+	// TODO This isn't real one yet. Parse from output the correct node based on the local IP
+	out, err := exec.Command("/usr/bin/kubectl", "get", "nodes", "-o", "wide").Output()
+	if err != nil {
+		return "", err
+	}
+
+	lines := strings.Split(string(out), "\n")
+	columns := strings.Split(lines[1], " ")
+	return strings.Trim(columns[0], " "), nil
+}
+
+func (n *NodeMigrator) drainAndShutdownNode() error {
+	_, err := execNodetool(n.getNodetoolPath(), "drain")
+	if err != nil {
+		return err
+	}
+
+	_, err = execNodetool(n.getNodetoolPath(), "stopdaemon")
+	return err
 }
 
 func (n *NodeMigrator) getPodName() string {
@@ -102,12 +166,12 @@ func (n *NodeMigrator) isSeed() bool {
 func (n *NodeMigrator) CreatePod() (*corev1.Pod, error) {
 	enableServiceLinks := true
 
-	containers, err := buildContainers()
+	containers, err := n.buildContainers()
 	if err != nil {
 		return nil, err
 	}
 
-	initContainers, err := buildInitContainers("")
+	initContainers, err := n.buildInitContainers()
 	if err != nil {
 		return nil, err
 	}
@@ -139,7 +203,7 @@ func (n *NodeMigrator) CreatePod() (*corev1.Pod, error) {
 }
 
 // This ensure that the server-config-builder init container is properly configured.
-func buildInitContainers(rackName string) ([]corev1.Container, error) {
+func (n *NodeMigrator) buildInitContainers() ([]corev1.Container, error) {
 
 	serverCfg := corev1.Container{}
 	serverCfg.Name = ServerConfigContainerName
@@ -169,7 +233,7 @@ func buildInitContainers(rackName string) ([]corev1.Container, error) {
 		// {Name: "POD_IP", ValueFrom: selectorFromFieldPath("status.podIP")},
 		// {Name: "HOST_IP", ValueFrom: selectorFromFieldPath("status.hostIP")},
 		{Name: "USE_HOST_IP_FOR_BROADCAST", Value: useHostIpForBroadcast},
-		{Name: "RACK_NAME", Value: rackName},
+		{Name: "RACK_NAME", Value: n.Rack},
 		// {Name: "PRODUCT_VERSION", Value: serverVersion},
 		// {Name: "PRODUCT_NAME", Value: dc.Spec.ServerType},
 		// TODO remove this post 1.0
@@ -222,15 +286,13 @@ func buildInitContainers(rackName string) ([]corev1.Container, error) {
 // 	return envVars, nil
 // }
 
-func makeImage() (string, error) {
-	// TODO Or just use GetCassandraImage directly?
-	return "", nil
-	// return images.GetCassandraImage(dc.Spec.ServerType, dc.Spec.ServerVersion)
+func (n *NodeMigrator) makeImage() (string, error) {
+	return images.GetCassandraImage(n.ServerType, n.ServerVersion)
 }
 
 // If values are provided in the matching containers in the
 // PodTemplateSpec field of the dc, they will override defaults.
-func buildContainers() ([]corev1.Container, error) {
+func (n *NodeMigrator) buildContainers() ([]corev1.Container, error) {
 
 	// Create new Container structs or get references to existing ones
 
@@ -241,7 +303,7 @@ func buildContainers() ([]corev1.Container, error) {
 
 	cassContainer.Name = CassandraContainerName
 
-	serverImage, err := makeImage()
+	serverImage, err := n.makeImage()
 	if err != nil {
 		// Could be unsupported DSE version
 		return nil, err
