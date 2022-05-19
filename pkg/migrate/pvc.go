@@ -3,6 +3,7 @@ package migrate
 import (
 	"context"
 	"fmt"
+	"time"
 
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
@@ -36,7 +37,11 @@ type NodeMigrator struct {
 
 func (n *NodeMigrator) parseDataPath(dataDir string) string {
 	// TODO Parse from configuration directory
-	return fmt.Sprintf("%s/%s", n.CassandraHome, dataDir[7:])
+	dataDirName := dataDir[7:]
+	if dataDirName == "config" {
+		dataDirName = "conf"
+	}
+	return fmt.Sprintf("%s/%s", n.CassandraHome, dataDirName)
 }
 
 func (n *NodeMigrator) createVolumeMounts() error {
@@ -53,6 +58,9 @@ func (n *NodeMigrator) createVolumeMounts() error {
 			return err
 		}
 	}
+
+	// TODO Instead of wait, check here that all the PVCs are bound before proceeding
+	time.Sleep(10 * time.Second)
 
 	return nil
 }

@@ -11,7 +11,6 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/burmanm/k8ssandra-client/pkg/cassdcutil"
 	cassdcapi "github.com/k8ssandra/cass-operator/apis/cassandra/v1beta1"
 	"github.com/pterm/pterm"
 	corev1 "k8s.io/api/core/v1"
@@ -58,12 +57,7 @@ type ClusterMigrator struct {
 	ServerVersion string
 }
 
-func NewClusterMigrator(namespace, cassandraHome string) (*ClusterMigrator, error) {
-	client, err := cassdcutil.GetClientInNamespace(namespace)
-	if err != nil {
-		return nil, err
-	}
-
+func NewClusterMigrator(client client.Client, namespace, cassandraHome string) (*ClusterMigrator, error) {
 	return &ClusterMigrator{
 		Client:        client,
 		Namespace:     namespace,
@@ -217,7 +211,9 @@ func (c *ClusterMigrator) CreateClusterConfigMap() error {
 						if c.ServerType == "" {
 							// We haven't parsed DSE information yet, so we can safely parse this
 							c.ServerType = "cassandra"
-							c.ServerVersion = fieldValue
+							c.ServerVersion = "4.0.3"
+							// My local setup is using a snapshot version and config-builder does not support it
+							// c.ServerVersion = fieldValue
 						}
 					case "X_11_PADDING":
 						// DSE 6.8

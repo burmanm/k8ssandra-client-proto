@@ -2,6 +2,7 @@ package migrate
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"os/exec"
 	"strconv"
@@ -227,7 +228,8 @@ func (n *NodeMigrator) CreatePod() error {
 func (n *NodeMigrator) buildVolumes() ([]corev1.Volume, error) {
 	volumes := []corev1.Volume{}
 
-	for _, source := range []string{"server-data", "server-config", "server-logs"} {
+	// for _, source := range []string{"server-data", "server-config", "server-logs"} {
+	for _, source := range []string{"server-data"} {
 		volume := corev1.Volume{
 			Name: source,
 			VolumeSource: corev1.VolumeSource{
@@ -238,17 +240,44 @@ func (n *NodeMigrator) buildVolumes() ([]corev1.Volume, error) {
 		}
 		volumes = append(volumes, volume)
 	}
-	vServerEncryption := corev1.Volume{
-		Name: "encryption-cred-storage",
+
+	vServerConfig := corev1.Volume{
+		Name: "server-config",
 		VolumeSource: corev1.VolumeSource{
-			Secret: &corev1.SecretVolumeSource{
-				SecretName: fmt.Sprintf("%s-keystore", n.Datacenter),
-			},
+			EmptyDir: &corev1.EmptyDirVolumeSource{},
 		},
 	}
-	volumes = append(volumes, vServerEncryption)
+
+	volumes = append(volumes, vServerConfig)
+
+	vServerLogs := corev1.Volume{
+		Name: "server-logs",
+		VolumeSource: corev1.VolumeSource{
+			EmptyDir: &corev1.EmptyDirVolumeSource{},
+		},
+	}
+
+	volumes = append(volumes, vServerLogs)
+
+	// vServerEncryption := corev1.Volume{
+	// 	Name: "encryption-cred-storage",
+	// 	VolumeSource: corev1.VolumeSource{
+	// 		Secret: &corev1.SecretVolumeSource{
+	// 			SecretName: fmt.Sprintf("%s-keystore", n.Datacenter),
+	// 		},
+	// 	},
+	// }
+	// volumes = append(volumes, vServerEncryption)
 
 	return volumes, nil
+}
+
+func selectorFromFieldPath(fieldPath string) *corev1.EnvVarSource {
+	return &corev1.EnvVarSource{
+		FieldRef: &corev1.ObjectFieldSelector{
+			FieldPath: fieldPath,
+		},
+	}
 }
 
 // This ensure that the server-config-builder init container is properly configured.
@@ -271,73 +300,64 @@ func (n *NodeMigrator) buildInitContainers() ([]corev1.Container, error) {
 	// Convert the bool to a string for the env var setting
 	useHostIpForBroadcast := "true"
 
-	// configEnvVar, err := getConfigDataEnVars(dc)
-	// if err != nil {
-	// 	return nil, errors.Wrap(err, "failed to get config env vars")
-	// }
-
-	// serverVersion := dc.Spec.ServerVersion
-
 	envDefaults := []corev1.EnvVar{
-		// {Name: "POD_IP", ValueFrom: selectorFromFieldPath("status.podIP")},
-		// {Name: "HOST_IP", ValueFrom: selectorFromFieldPath("status.hostIP")},
+		{Name: "POD_IP", ValueFrom: selectorFromFieldPath("status.podIP")},
+		{Name: "HOST_IP", ValueFrom: selectorFromFieldPath("status.hostIP")},
 		{Name: "USE_HOST_IP_FOR_BROADCAST", Value: useHostIpForBroadcast},
 		{Name: "RACK_NAME", Value: n.Rack},
-		// {Name: "PRODUCT_VERSION", Value: serverVersion},
-		// {Name: "PRODUCT_NAME", Value: dc.Spec.ServerType},
+		{Name: "PRODUCT_VERSION", Value: n.ServerVersion},
+		{Name: "PRODUCT_NAME", Value: n.ServerType},
 		// TODO remove this post 1.0
 		// {Name: "DSE_VERSION", Value: serverVersion},
 	}
 
-	// for _, envVar := range configEnvVar {
-	// 	envDefaults = append(envDefaults, envVar)
-	// }
+	configEnvVar, err := n.getConfigDataEnVars()
+	if err != nil {
+		return nil, err
+	}
+	envDefaults = append(envDefaults, configEnvVar...)
 
 	serverCfg.Env = envDefaults
 
 	return []corev1.Container{serverCfg}, nil
 }
 
-// func getConfigDataEnVars(dc *api.CassandraDatacenter) ([]corev1.EnvVar, error) {
-// 	envVars := make([]corev1.EnvVar, 0)
+func (n *NodeMigrator) getConfigDataEnVars() ([]corev1.EnvVar, error) {
+	envVars := make([]corev1.EnvVar, 0)
 
-// 	if len(dc.Spec.ConfigSecret) > 0 {
-// 		envVars = append(envVars, corev1.EnvVar{
-// 			Name: "CONFIG_FILE_DATA",
-// 			ValueFrom: &corev1.EnvVarSource{
-// 				SecretKeyRef: &corev1.SecretKeySelector{
-// 					LocalObjectReference: corev1.LocalObjectReference{
-// 						Name: getDatacenterConfigSecretName(dc),
-// 					},
-// 					Key: "config",
-// 				},
-// 			},
-// 		})
+	configs := &corev1.ConfigMap{}
+	configMapKey := types.NamespacedName{Name: getConfigMapName(n.Datacenter, "cass-config"), Namespace: n.Namespace}
+	if err := n.Client.Get(context.TODO(), configMapKey, configs); err != nil {
+		return nil, err
+	}
 
-// 		if configHash, ok := dc.Annotations[api.ConfigHashAnnotation]; ok {
-// 			envVars = append(envVars, corev1.EnvVar{
-// 				Name:  "CONFIG_HASH",
-// 				Value: configHash,
-// 			})
-// 			return envVars, nil
-// 		}
+	configData, err := json.Marshal(configs.Data)
+	if err != nil {
+		return nil, err
+	}
 
-// 		return nil, fmt.Errorf("datacenter %s is missing %s annotation", dc.Name, api.ConfigHashAnnotation)
-// 	}
+	/*
+		//    config: |-
+		//      {
+		//        "cassandra-yaml": {
+		//          "read_request_timeout_in_ms": 10000
+		//        },
+		//        "jmv-options": {
+		//          "max_heap_size": 1024M
+		//        }
+		//      }
+	*/
 
-// 	configData, err := dc.GetConfigAsJSON(dc.Spec.Config)
+	if err != nil {
+		return envVars, err
+	}
+	envVars = append(envVars, corev1.EnvVar{Name: "CONFIG_FILE_DATA", Value: string(configData)})
 
-// 	if err != nil {
-// 		return envVars, err
-// 	}
-// 	envVars = append(envVars, corev1.EnvVar{Name: "CONFIG_FILE_DATA", Value: configData})
-
-// 	return envVars, nil
-// }
+	return envVars, nil
+}
 
 func (n *NodeMigrator) makeImage() (string, error) {
-	// return images.GetCassandraImage(n.ServerType, n.ServerVersion)
-	return images.GetCassandraImage(n.ServerType, "4.0.3")
+	return images.GetCassandraImage(n.ServerType, n.ServerVersion)
 }
 
 // If values are provided in the matching containers in the
@@ -431,10 +451,10 @@ func (n *NodeMigrator) buildContainers() ([]corev1.Container, error) {
 				Name:      PvcName,
 				MountPath: "/var/lib/cassandra",
 			},
-			{
-				Name:      "encryption-cred-storage",
-				MountPath: "/etc/encryption/",
-			},
+			// {
+			// 	Name:      "encryption-cred-storage",
+			// 	MountPath: "/etc/encryption/",
+			// },
 		}...)
 
 	// volumeMounts = append(volumeMounts, cassContainer.VolumeMounts)

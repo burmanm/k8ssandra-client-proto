@@ -3,6 +3,7 @@ package migrate
 import (
 	"fmt"
 
+	"github.com/burmanm/k8ssandra-client/pkg/cassdcutil"
 	"github.com/burmanm/k8ssandra-client/pkg/migrate"
 	"github.com/pterm/pterm"
 	"github.com/spf13/cobra"
@@ -92,7 +93,18 @@ func (c *options) Validate() error {
 // Run removes the finalizers for a release X in the given namespace
 func (c *options) Run() error {
 	spinnerLiveText, _ := pterm.DefaultSpinner.Start("Gathering information for node migration...")
-	migrator, err := migrate.NewClusterMigrator(c.namespace, c.cassandraHome)
+
+	spinnerLiveText.UpdateText("Creating Kubernetes client to namespace " + c.namespace)
+
+	client, err := cassdcutil.GetClientInNamespace(c.namespace)
+	if err != nil {
+		pterm.Error.Printf("Failed to connect to Kubernetes node: %v", err)
+		return err
+	}
+
+	pterm.Success.Println("Connected to Kubernetes node")
+
+	migrator, err := migrate.NewClusterMigrator(client, c.namespace, c.cassandraHome)
 	if err != nil {
 		return err
 	}
@@ -106,6 +118,19 @@ func (c *options) Run() error {
 		pterm.Error.Printf("Failed to connect to local Cassandra node to fetch required information: %v", err)
 		return err
 	}
+
+	configParser := migrate.NewParser(client, c.namespace, c.cassandraHome, migrator.Datacenter)
+	if err != nil {
+		return err
+	}
+
+	err = configParser.ParseConfigs(spinnerLiveText)
+	if err != nil {
+		pterm.Error.Printf("Failed to parse local Cassandra node configuration: %v", err)
+		return err
+	}
+
+	pterm.Info.Println("Initialized and parsed current Cassandra configuration. You may now review configuration before proceeding with node migration")
 
 	n, err := migrate.NewNodeMigrator(c.namespace, c.cassandraHome)
 	if err != nil {
