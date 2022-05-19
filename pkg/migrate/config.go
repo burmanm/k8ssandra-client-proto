@@ -1,14 +1,11 @@
 package migrate
 
 import (
-	"bufio"
 	"context"
 	"fmt"
-	"io/fs"
 	"os"
 	"path/filepath"
 	"regexp"
-	"strings"
 
 	"github.com/pterm/pterm"
 	"gopkg.in/yaml.v3"
@@ -61,42 +58,43 @@ func (c *ConfigParser) fetchAllOptionFiles() (*corev1.ConfigMap, error) {
 		Data: make(map[string]string),
 	}
 
-	// Parse through all $CONF_DIRECTORY/jvm*-server.options and write them to a ConfigMap
-	filepath.WalkDir(c.getConfigDir(), func(path string, d fs.DirEntry, err error) error {
-		if d.IsDir() {
-			// We're not processing subdirs
-			return nil
-		}
-		if serverOptionName.MatchString(d.Name()) {
-			// Parse this file and add it to the ConfigMap
-			f, err := os.Open(path)
-			if err != nil {
-				return err
+	/*
+		// Parse through all $CONF_DIRECTORY/jvm*-server.options and write them to a ConfigMap
+		filepath.WalkDir(c.getConfigDir(), func(path string, d fs.DirEntry, err error) error {
+			if d.IsDir() {
+				// We're not processing subdirs
+				return nil
 			}
-
-			defer f.Close()
-
-			var configData strings.Builder
-
-			// Remove the comment lines to reduce the ConfigMap size
-			scanner := bufio.NewScanner(f)
-			for scanner.Scan() {
-				line := scanner.Text()
-				if !strings.HasPrefix(line, "#") {
-					configData.WriteString(line)
+			if serverOptionName.MatchString(d.Name()) {
+				// Parse this file and add it to the ConfigMap
+				f, err := os.Open(path)
+				if err != nil {
+					return err
 				}
+
+				defer f.Close()
+
+				var configData strings.Builder
+
+				// Remove the comment lines to reduce the ConfigMap size
+				scanner := bufio.NewScanner(f)
+				for scanner.Scan() {
+					line := scanner.Text()
+					if !strings.HasPrefix(line, "#") {
+						configData.WriteString(line)
+					}
+				}
+
+				if err := scanner.Err(); err != nil {
+					return err
+				}
+
+				keyName := strings.ReplaceAll(d.Name(), ".", "-")
+				configFilesMap.Data[keyName] = configData.String()
 			}
-
-			if err := scanner.Err(); err != nil {
-				return err
-			}
-
-			keyName := strings.ReplaceAll(d.Name(), ".", "-")
-			configFilesMap.Data[keyName] = configData.String()
-		}
-		return nil
-	})
-
+			return nil
+		})
+	*/
 	if err := c.Client.Create(context.TODO(), configFilesMap); err != nil {
 		return nil, err
 	}
@@ -109,6 +107,10 @@ func (c *ConfigParser) parseCassandraYaml(configFilesMap *corev1.ConfigMap) (*co
 	yamlFile, err := os.ReadFile(yamlPath)
 	if err != nil {
 		return nil, err
+	}
+
+	if configFilesMap.Data == nil {
+		configFilesMap.Data = make(map[string]string)
 	}
 
 	// Unmarshal, Marshal to remove all comments (and some fields if necessary)

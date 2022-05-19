@@ -12,6 +12,7 @@ import (
 	cassdcapi "github.com/k8ssandra/cass-operator/apis/cassandra/v1beta1"
 	"github.com/k8ssandra/cass-operator/pkg/images"
 	"github.com/pterm/pterm"
+	"gopkg.in/yaml.v3"
 
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -331,7 +332,18 @@ func (n *NodeMigrator) getConfigDataEnVars() ([]corev1.EnvVar, error) {
 		return nil, err
 	}
 
-	configData, err := json.Marshal(configs.Data)
+	configsData := make(map[string]map[string]interface{})
+
+	for k, v := range configs.Data {
+		yamlData := make(map[string]interface{})
+		fmt.Printf("Input data: %s\n", v)
+		if err := yaml.Unmarshal([]byte(v), &yamlData); err != nil {
+			return nil, err
+		}
+		configsData[k] = yamlData
+	}
+
+	configData, err := json.Marshal(configsData)
 	if err != nil {
 		return nil, err
 	}
