@@ -194,6 +194,9 @@ func (n *NodeMigrator) CreatePod() error {
 		return err
 	}
 
+	userId := int64(999)
+	userGroup := int64(999)
+
 	pod := &corev1.Pod{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      n.getPodName(),
@@ -213,9 +216,12 @@ func (n *NodeMigrator) CreatePod() error {
 			InitContainers:     initContainers,
 			NodeName:           n.KubeNode,
 			// SecurityContext should mimic whatever is running currently the DSE / Cassandra installation
-			SecurityContext: &corev1.PodSecurityContext{},
-			Tolerations:     []corev1.Toleration{},
-			Volumes:         volumes,
+			SecurityContext: &corev1.PodSecurityContext{
+				RunAsUser:  &userId,
+				RunAsGroup: &userGroup,
+			},
+			Tolerations: []corev1.Toleration{},
+			Volumes:     volumes,
 		},
 	}
 
