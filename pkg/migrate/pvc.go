@@ -11,6 +11,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	cassdcapi "github.com/k8ssandra/cass-operator/apis/cassandra/v1beta1"
+	"github.com/pterm/pterm"
 )
 
 type NodeMigrator struct {
@@ -33,6 +34,8 @@ type NodeMigrator struct {
 
 	ServerType    string
 	ServerVersion string
+
+	p *pterm.SpinnerPrinter
 }
 
 func (n *NodeMigrator) parseDataPath(dataDir string) string {

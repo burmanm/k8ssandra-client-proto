@@ -7,6 +7,7 @@ import (
 	"os/exec"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/burmanm/k8ssandra-client/pkg/cassdcutil"
 	cassdcapi "github.com/k8ssandra/cass-operator/apis/cassandra/v1beta1"
@@ -18,6 +19,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/intstr"
+	waitutil "k8s.io/apimachinery/pkg/util/wait"
 )
 
 const (
@@ -42,6 +44,7 @@ func NewNodeMigrator(namespace, cassandraHome string) (*NodeMigrator, error) {
 }
 
 func (n *NodeMigrator) MigrateNode(p *pterm.SpinnerPrinter) error {
+	n.p = p
 	// TODO Use the ButterTea or something for prettier output
 	p.UpdateText("Getting Cassandra node information")
 
@@ -83,7 +86,14 @@ func (n *NodeMigrator) MigrateNode(p *pterm.SpinnerPrinter) error {
 
 	// Run startCassandra on the node
 	p.UpdateText("Starting Cassandra node on the Kubernetes cluster")
-	pterm.Warning.Println("Failed to start Cassandra node")
+
+	err = n.StartPod()
+	if err != nil {
+		return err
+	}
+
+	pterm.Success.Println("Cassandra pod has successfully started")
+	// pterm.Warning.Println("Failed to start Cassandra node")
 
 	return nil
 }
@@ -139,8 +149,6 @@ func (n *NodeMigrator) getNodeInfo() error {
 		return err
 	}
 	n.KubeNode = kubeNode
-
-	// fmt.Printf("NodeMigrator: %v\n", n)
 
 	return nil
 }
@@ -202,8 +210,11 @@ func (n *NodeMigrator) CreatePod() error {
 			Name:      n.getPodName(),
 			Namespace: n.Namespace,
 			Labels: map[string]string{
-				"cassandra.datastax.com/seed-node":   strconv.FormatBool(n.isSeed()),
 				"statefulset.kubernetes.io/pod-name": n.getPodName(),
+				cassdcapi.SeedNodeLabel:              strconv.FormatBool(n.isSeed()),
+				cassdcapi.RackLabel:                  n.Rack,
+				cassdcapi.ClusterLabel:               cassdcapi.CleanupForKubernetes(n.Cluster),
+				cassdcapi.DatacenterLabel:            n.Datacenter,
 			},
 		},
 		Spec: corev1.PodSpec{
@@ -230,6 +241,102 @@ func (n *NodeMigrator) CreatePod() error {
 	}
 
 	return nil
+}
+
+func (n *NodeMigrator) StartPod() error {
+	// TODO Could we instead of host networking also use nodeReplace to replace all the existing nodes with the data we already have? Thus moving to Kubernetes
+	// networking?
+
+	// Create ManagementClient
+	mgmtClient, err := NewManagementClient(context.TODO(), n.Client)
+	if err != nil {
+		return err
+	}
+
+	// Get the pod
+	podKey := types.NamespacedName{Name: n.getPodName(), Namespace: n.Namespace}
+	pod := &corev1.Pod{}
+	if err := n.Client.Get(context.TODO(), podKey, pod); err != nil {
+		return err
+	}
+
+	// Wait until the pod is ready to start
+	err = waitutil.PollImmediate(5*time.Second, 10*time.Minute, func() (bool, error) {
+		if err := n.Client.Get(context.TODO(), podKey, pod); err != nil {
+			return false, err
+		}
+		return isMgmtApiRunning(pod), nil
+	})
+
+	if err != nil {
+		return err
+	}
+
+	time.Sleep(5 * time.Second)
+
+	pterm.Success.Println("Management API has started")
+
+	n.p.UpdateText("Calling Cassandra start...")
+	// Call the Cassandra start
+	err = mgmtClient.CallLifecycleStartEndpoint(pod)
+	if err != nil {
+		return err
+	}
+
+	// Wait until the pod has started
+	err = waitutil.PollImmediate(5*time.Second, 10*time.Minute, func() (bool, error) {
+		if err := n.Client.Get(context.TODO(), podKey, pod); err != nil {
+			return false, err
+		}
+		return isServerReady(pod), nil
+	})
+	if err != nil {
+		return err
+	}
+
+	// Update podLabel to indicate pod has started
+	if err := n.Client.Get(context.TODO(), podKey, pod); err != nil {
+		return err
+	}
+
+	pod.Labels[cassdcapi.CassNodeState] = "Started"
+
+	if err := n.Client.Update(context.TODO(), pod); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+// from cass-operator
+func isMgmtApiRunning(pod *corev1.Pod) bool {
+	podStatus := pod.Status
+	statuses := podStatus.ContainerStatuses
+	for _, status := range statuses {
+		if status.Name != "cassandra" {
+			continue
+		}
+		state := status.State
+		runInfo := state.Running
+		if runInfo != nil {
+			// give management API ten seconds to come up
+			tenSecondsAgo := time.Now().Add(time.Second * -10)
+			return runInfo.StartedAt.Time.Before(tenSecondsAgo)
+		}
+	}
+	return false
+}
+
+func isServerReady(pod *corev1.Pod) bool {
+	status := pod.Status
+	statuses := status.ContainerStatuses
+	for _, status := range statuses {
+		if status.Name != "cassandra" {
+			continue
+		}
+		return status.Ready
+	}
+	return false
 }
 
 func (n *NodeMigrator) buildVolumes() ([]corev1.Volume, error) {
@@ -342,7 +449,6 @@ func (n *NodeMigrator) getConfigDataEnVars() ([]corev1.EnvVar, error) {
 
 	for k, v := range configs.Data {
 		yamlData := make(map[string]interface{})
-		fmt.Printf("Input data: %s\n", v)
 		if err := yaml.Unmarshal([]byte(v), &yamlData); err != nil {
 			return nil, err
 		}

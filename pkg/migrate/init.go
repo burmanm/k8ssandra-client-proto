@@ -248,8 +248,6 @@ func (c *ClusterMigrator) CreateClusterConfigMap() error {
 	fields := strings.Split(lines[1], ":")
 	c.Cluster = fields[1][1:]
 
-	// fmt.Printf("Parsed the following:\nRack: %s\nDatacenter: %s\nCluster: %s\n", c.Rack, c.Datacenter, c.Cluster)
-
 	configMap := &corev1.ConfigMap{}
 	configMapKey := types.NamespacedName{Name: configMapName(c.Datacenter), Namespace: c.Namespace}
 	if err := c.Client.Get(context.TODO(), configMapKey, configMap); err != nil && !errors.IsNotFound(err) {
