@@ -115,12 +115,17 @@ func (c *options) Run() error {
 
 	// Verify if we have local copy of the values.yaml
 	// 	if not, fetch it
-	chartDir, err := helmutil.DownloadChartRelease(targetVersion)
+	chartDir, err := helmutil.DownloadChartRelease(helmutil.ChartName, targetVersion)
 	if err != nil {
 		return err
 	}
 
-	outputFile, err := helmutil.MergeValuesFile(c.cfg, c.settings, chartDir, targetVersion, c.releaseName)
+	chatExtractDir, err := helmutil.ExtractChartRelease(chartDir, targetVersion)
+	if err != nil {
+		return err
+	}
+
+	outputFile, err := helmutil.MergeValuesFile(c.cfg, c.settings, chatExtractDir, targetVersion, c.releaseName)
 	if err != nil {
 		return err
 	}
@@ -138,7 +143,7 @@ func (c *options) Run() error {
 		return err
 	}
 
-	_, err = helmutil.UpgradeValues(c.cfg, chartDir, c.releaseName, file)
+	_, err = helmutil.UpgradeValues(c.cfg, chatExtractDir, c.releaseName, file)
 	return err
 
 	// TODO Should we only add values that were modified? In other words, opposite of merge?

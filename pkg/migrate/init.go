@@ -55,6 +55,8 @@ type ClusterMigrator struct {
 
 	ServerType    string
 	ServerVersion string
+
+	seeds []string
 }
 
 func NewClusterMigrator(client client.Client, namespace, cassandraHome string) (*ClusterMigrator, error) {
@@ -62,6 +64,7 @@ func NewClusterMigrator(client client.Client, namespace, cassandraHome string) (
 		Client:        client,
 		Namespace:     namespace,
 		CassandraHome: cassandraHome,
+		seeds:         make([]string, 0),
 	}, nil
 }
 
@@ -73,17 +76,32 @@ func (c *ClusterMigrator) InitCluster(p *pterm.SpinnerPrinter) error {
 
 	// TODO Replace with BubbleTea
 
-	p.UpdateText("Fetching cluster details")
+	p.UpdateText("Fetching Cassandra cluster details")
 	err := c.CreateClusterConfigMap()
 	if err != nil {
-		// fmt.Printf("Failed to get cluster details: %v\n", err)
+		fmt.Printf("Failed to get cluster details: %v\n", err)
 		// pterm.Fatal.Println("Failed to get cluster details")
 		return err
 	}
 
-	pterm.Success.Println("Fetched cluster details and stored them to Kubernetes")
+	pterm.Success.Println("Fetched cluster details from Cassandra node and stored them to Kubernetes")
 
-	p.UpdateText("Fetching seeds")
+	// configParser := NewParser(c.Client, c.Namespace, c.CassandraHome, c.Datacenter)
+	// if err != nil {
+	// 	return err
+	// }
+
+	p.UpdateText("Parsing Cassandra configuration")
+
+	err = c.ParseConfigs(p)
+	if err != nil {
+		pterm.Error.Printf("Failed to parse local Cassandra node configuration: %v", err)
+		return err
+	}
+
+	pterm.Success.Println("Parsed Cassandra configuration")
+
+	p.UpdateText("Creating seed services")
 	err = c.CreateSeedServices()
 	if err != nil {
 		// fmt.Printf("Failed to get cluster seeds: %v\n", err)
@@ -92,6 +110,7 @@ func (c *ClusterMigrator) InitCluster(p *pterm.SpinnerPrinter) error {
 	}
 	pterm.Success.Println("Created seed services")
 
+	pterm.Info.Println("Initialized and parsed current Cassandra configuration. You may now review configuration before proceeding with node migration")
 	// pterm.Info.Println("You can now import nodes to the Kubernetes")
 
 	// TODO After nodeMigrations:
@@ -102,6 +121,10 @@ func (c *ClusterMigrator) InitCluster(p *pterm.SpinnerPrinter) error {
 }
 
 func (c *ClusterMigrator) getSeeds() ([]string, error) {
+	if len(c.seeds) > 0 {
+		return c.seeds, nil
+	}
+
 	// nodetool getseeds returns seeds other than the current one (seed labeling can't be done here)
 	seedsOutput, err := execNodetool(c.getNodetoolPath(), "getseeds")
 	if err != nil {
@@ -211,9 +234,7 @@ func (c *ClusterMigrator) CreateClusterConfigMap() error {
 						if c.ServerType == "" {
 							// We haven't parsed DSE information yet, so we can safely parse this
 							c.ServerType = "cassandra"
-							c.ServerVersion = "4.0.3"
-							// My local setup is using a snapshot version and config-builder does not support it
-							// c.ServerVersion = fieldValue
+							c.ServerVersion = fieldValue
 						}
 					case "X_11_PADDING":
 						// DSE 6.8
@@ -233,6 +254,7 @@ func (c *ClusterMigrator) CreateClusterConfigMap() error {
 				// We parsed the remaining fields, this is starting next node
 				break
 			}
+			detailsStarted = true
 		} else {
 			detailsStarted = true
 		}

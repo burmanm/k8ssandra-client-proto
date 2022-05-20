@@ -12,6 +12,7 @@ import (
 	"github.com/burmanm/k8ssandra-client/pkg/cassdcutil"
 	cassdcapi "github.com/k8ssandra/cass-operator/apis/cassandra/v1beta1"
 	"github.com/k8ssandra/cass-operator/pkg/images"
+	"github.com/k8ssandra/cass-operator/pkg/serverconfig"
 	"github.com/pterm/pterm"
 	"gopkg.in/yaml.v3"
 
@@ -204,6 +205,7 @@ func (n *NodeMigrator) CreatePod() error {
 
 	userId := int64(999)
 	userGroup := int64(999)
+	fsGroup := int64(1001)
 
 	pod := &corev1.Pod{
 		ObjectMeta: metav1.ObjectMeta{
@@ -221,7 +223,7 @@ func (n *NodeMigrator) CreatePod() error {
 			HostNetwork:        true,
 			Affinity:           &corev1.Affinity{},
 			Containers:         containers,
-			DNSPolicy:          corev1.DNSClusterFirst,
+			DNSPolicy:          corev1.DNSClusterFirstWithHostNet,
 			EnableServiceLinks: &enableServiceLinks,
 			Hostname:           n.getPodName(),
 			InitContainers:     initContainers,
@@ -230,6 +232,7 @@ func (n *NodeMigrator) CreatePod() error {
 			SecurityContext: &corev1.PodSecurityContext{
 				RunAsUser:  &userId,
 				RunAsGroup: &userGroup,
+				FSGroup:    &fsGroup,
 			},
 			Tolerations: []corev1.Toleration{},
 			Volumes:     volumes,
@@ -436,6 +439,42 @@ func (n *NodeMigrator) buildInitContainers() ([]corev1.Container, error) {
 	return []corev1.Container{serverCfg}, nil
 }
 
+func (n *NodeMigrator) getModelValues() serverconfig.NodeConfig {
+	additionalSeedServiceName := cassdcapi.CleanupForKubernetes(n.Cluster) + "-" + n.Datacenter + "-additional-seed-service"
+	seedServiceName := cassdcapi.CleanupForKubernetes(n.Cluster) + "-seed-service"
+
+	seeds := []string{seedServiceName, additionalSeedServiceName}
+
+	native := 0
+	nativeSSL := 0
+	internode := 0
+	internodeSSL := 0
+	graphEnabled := 0
+	solrEnabled := 0
+	sparkEnabled := 0
+
+	modelValues := serverconfig.GetModelValues(
+		seeds,
+		n.Cluster,
+		n.Datacenter,
+		graphEnabled,
+		solrEnabled,
+		sparkEnabled,
+		native,
+		nativeSSL,
+		internode,
+		internodeSSL)
+
+	return modelValues
+
+	// var modelBytes []byte
+
+	// modelBytes, err := json.Marshal(modelValues)
+	// if err != nil {
+	// 	return "", err
+	// }
+}
+
 func (n *NodeMigrator) getConfigDataEnVars() ([]corev1.EnvVar, error) {
 	envVars := make([]corev1.EnvVar, 0)
 
@@ -445,17 +484,18 @@ func (n *NodeMigrator) getConfigDataEnVars() ([]corev1.EnvVar, error) {
 		return nil, err
 	}
 
-	configsData := make(map[string]map[string]interface{})
+	modelValues := n.getModelValues()
+	// configsData := make(map[string]map[string]interface{})
 
 	for k, v := range configs.Data {
-		yamlData := make(map[string]interface{})
+		yamlData := make(serverconfig.NodeConfig)
 		if err := yaml.Unmarshal([]byte(v), &yamlData); err != nil {
 			return nil, err
 		}
-		configsData[k] = yamlData
+		modelValues[k] = yamlData
 	}
 
-	configData, err := json.Marshal(configsData)
+	configData, err := json.Marshal(modelValues)
 	if err != nil {
 		return nil, err
 	}
@@ -511,7 +551,7 @@ func (n *NodeMigrator) buildContainers() ([]corev1.Container, error) {
 
 	cassContainer.Lifecycle = &corev1.Lifecycle{}
 
-	// This is drain..
+	// This is drain.. perhaps our reconcile once cass-operator is up will add this? We don't have DC spec created yet
 	// if cassContainer.Lifecycle.PreStop == nil {
 	// 	action, err := httphelper.GetMgmtApiWgetPostAction(dc, httphelper.WgetNodeDrainEndpoint, "")
 	// 	if err != nil {

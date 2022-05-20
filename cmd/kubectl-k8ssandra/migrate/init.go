@@ -1,12 +1,24 @@
 package migrate
 
 import (
+	"context"
 	"fmt"
+	"log"
+	"os"
+	"time"
 
 	"github.com/burmanm/k8ssandra-client/pkg/cassdcutil"
+	"github.com/burmanm/k8ssandra-client/pkg/helmutil"
 	"github.com/burmanm/k8ssandra-client/pkg/migrate"
 	"github.com/pterm/pterm"
 	"github.com/spf13/cobra"
+	"helm.sh/helm/v3/pkg/action"
+	"helm.sh/helm/v3/pkg/cli"
+	"helm.sh/helm/v3/pkg/cli/values"
+	"helm.sh/helm/v3/pkg/getter"
+	appsv1 "k8s.io/api/apps/v1"
+	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/cli-runtime/pkg/genericclioptions"
 )
 
@@ -22,6 +34,10 @@ var (
 	// errNotEnoughParameters = fmt.Errorf("not enough parameters to run nodetool")
 )
 
+const (
+	releaseName = "migrate"
+)
+
 type options struct {
 	configFlags *genericclioptions.ConfigFlags
 	genericclioptions.IOStreams
@@ -29,6 +45,10 @@ type options struct {
 	namespace     string
 	nodetoolPath  string
 	cassandraHome string
+
+	// Helm related
+	cfg      *action.Configuration
+	settings *cli.EnvSettings
 }
 
 func newOptions(streams genericclioptions.IOStreams) *options {
@@ -73,13 +93,39 @@ func NewInitCmd(streams genericclioptions.IOStreams) *cobra.Command {
 // Complete parses the arguments and necessary flags to options
 func (c *options) Complete(cmd *cobra.Command, args []string) error {
 	var err error
+
+	c.namespace, _, err = c.configFlags.ToRawKubeConfigLoader().Namespace()
+	if err != nil {
+		return err
+	}
+
+	// Create new namespace for this usage
+	if c.namespace == "default" || c.namespace == "" {
+		c.namespace = releaseName
+	}
+
+	actionConfig := new(action.Configuration)
+	settings := cli.New()
+	settings.SetNamespace(c.namespace)
+
+	helmDriver := os.Getenv("HELM_DRIVER")
+	if err := actionConfig.Init(settings.RESTClientGetter(), c.namespace, helmDriver, func(format string, v ...interface{}) {}); err != nil {
+		log.Fatal(err)
+	}
+
+	c.settings = settings
+	c.cfg = actionConfig
+
+	return nil
+
+	// var err error
 	// if len(args) < 0 {
 	// 	return errNotEnoughParameters
 	// }
 
 	// c.targetVersion = args[0]
-	c.namespace, _, err = c.configFlags.ToRawKubeConfigLoader().Namespace()
-	return err
+	// c.namespace, _, err = c.configFlags.ToRawKubeConfigLoader().Namespace()
+	// return err
 }
 
 // Validate ensures that all required arguments and flag values are provided
@@ -104,6 +150,11 @@ func (c *options) Run() error {
 
 	pterm.Success.Println("Connected to Kubernetes node")
 
+	err = cassdcutil.CreateNamespaceIfNotExists(client, c.namespace)
+	if err != nil {
+		return err
+	}
+
 	migrator, err := migrate.NewClusterMigrator(client, c.namespace, c.cassandraHome)
 	if err != nil {
 		return err
@@ -113,25 +164,71 @@ func (c *options) Run() error {
 		migrator.NodetoolPath = c.nodetoolPath
 	}
 
+	spinnerLiveText.UpdateText("Installing cass-operator to the Kubernetes cluster")
+
+	// TODO Migrate this to ClusterMigrator..
+
+	// cassOperatorValues := map[string]interface{}{}
+	p := getter.All(c.settings)
+	valueOpts := &values.Options{}
+	cassOperatorValues, err := valueOpts.MergeValues(p)
+	if err != nil {
+		return err
+	}
+
+	downloadPath, err := helmutil.DownloadChartRelease("cass-operator", "0.35.0")
+	if err != nil {
+		pterm.Error.Printf("Failed to download cass-operator: %v", err)
+		return err
+	}
+
+	pterm.Success.Println("Downloaded cass-operator")
+
+	_, err = helmutil.Install(c.cfg, releaseName, downloadPath, c.namespace, cassOperatorValues)
+	if err != nil {
+		pterm.Error.Printf("Failed to install cass-operator: %v", err)
+		return err
+	}
+
+	pterm.Success.Println("Installed cass-operator")
+
+	spinnerLiveText.UpdateText("Waiting for cass-operator to start...")
+
+	err = wait.PollImmediate(5*time.Second, 10*time.Minute, func() (bool, error) {
+		// depl := &corev1.Deployment{}
+		depl := &appsv1.Deployment{}
+		deplKey := types.NamespacedName{Name: fmt.Sprintf("%s-cass-operator", releaseName), Namespace: c.namespace}
+		if err := client.Get(context.TODO(), deplKey, depl); err != nil {
+			return false, err
+		}
+		return depl.Status.ReadyReplicas > 0, nil
+	})
+	if err != nil {
+		return err
+	}
+
+	pterm.Success.Println("cass-operator has started")
+
 	err = migrator.InitCluster(spinnerLiveText)
 	if err != nil {
 		pterm.Error.Printf("Failed to connect to local Cassandra node to fetch required information: %v", err)
 		return err
 	}
 
-	configParser := migrate.NewParser(client, c.namespace, c.cassandraHome, migrator.Datacenter)
-	if err != nil {
-		return err
-	}
+	/*
+		configParser := migrate.NewParser(client, c.namespace, c.cassandraHome, migrator.Datacenter)
+		if err != nil {
+			return err
+		}
 
-	err = configParser.ParseConfigs(spinnerLiveText)
-	if err != nil {
-		pterm.Error.Printf("Failed to parse local Cassandra node configuration: %v", err)
-		return err
-	}
+		err = configParser.ParseConfigs(spinnerLiveText)
+		if err != nil {
+			pterm.Error.Printf("Failed to parse local Cassandra node configuration: %v", err)
+			return err
+		}
 
-	pterm.Info.Println("Initialized and parsed current Cassandra configuration. You may now review configuration before proceeding with node migration")
-
+		pterm.Info.Println("Initialized and parsed current Cassandra configuration. You may now review configuration before proceeding with node migration")
+	*/
 	n, err := migrate.NewNodeMigrator(c.namespace, c.cassandraHome)
 	if err != nil {
 		return err

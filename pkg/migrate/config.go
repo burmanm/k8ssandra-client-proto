@@ -6,35 +6,41 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"strings"
 
 	"github.com/pterm/pterm"
 	"gopkg.in/yaml.v3"
 	corev1 "k8s.io/api/core/v1"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"sigs.k8s.io/controller-runtime/pkg/client"
+	"k8s.io/apimachinery/pkg/api/errors"
+	"k8s.io/apimachinery/pkg/types"
 )
 
-type ConfigParser struct {
-	client.Client
-	cassandraHome string
-	datacenter    string
-	namespace     string
-}
+// type ConfigParser struct {
+// 	client.Client
+// 	cassandraHome string
+// 	datacenter    string
+// 	namespace     string
+// }
 
 var serverOptionName = regexp.MustCompile("^jvm.*-server.options$")
 
-func NewParser(client client.Client, namespace, cassandraHome, datacenter string) *ConfigParser {
-	return &ConfigParser{
-		Client:        client,
-		cassandraHome: cassandraHome,
-		datacenter:    datacenter,
-		namespace:     namespace,
-	}
-}
+// func NewParser(client client.Client, namespace, cassandraHome, datacenter string) *ConfigParser {
+// 	return &ConfigParser{
+// 		Client:        client,
+// 		cassandraHome: cassandraHome,
+// 		datacenter:    datacenter,
+// 		namespace:     namespace,
+// 	}
+// }
 
-func (c *ConfigParser) ParseConfigs(p *pterm.SpinnerPrinter) error {
-	p.UpdateText("Fetching all JVM options")
-	confMap, err := c.fetchAllOptionFiles()
+func (c *ClusterMigrator) ParseConfigs(p *pterm.SpinnerPrinter) error {
+	confMap, err := c.getOrCreateConfigMap()
+	if err != nil {
+		return err
+	}
+
+	p.UpdateText("Parsing all JVM options files")
+	confMap, err = c.fetchAllOptionFiles(confMap)
 	if err != nil {
 		return err
 	}
@@ -50,13 +56,24 @@ func (c *ConfigParser) ParseConfigs(p *pterm.SpinnerPrinter) error {
 	return nil
 }
 
-func (c *ConfigParser) fetchAllOptionFiles() (*corev1.ConfigMap, error) {
-	configFilesMap := &corev1.ConfigMap{
-		ObjectMeta: metav1.ObjectMeta{
-			Name: getConfigMapName(c.datacenter, "cass-config"),
-		},
-		Data: make(map[string]string),
+func (c *ClusterMigrator) getOrCreateConfigMap() (*corev1.ConfigMap, error) {
+	configFilesMap := &corev1.ConfigMap{}
+	configFilesMapKey := types.NamespacedName{Name: getConfigMapName(c.Datacenter, "cass-config"), Namespace: c.Namespace}
+	if err := c.Client.Get(context.TODO(), configFilesMapKey, configFilesMap); err != nil && !errors.IsNotFound(err) {
+		return nil, err
+	} else if errors.IsNotFound(err) {
+		configFilesMap.ObjectMeta.Name = configFilesMapKey.Name
+		configFilesMap.ObjectMeta.Namespace = configFilesMapKey.Namespace
+		configFilesMap.Data = map[string]string{}
+		if err := c.Client.Create(context.TODO(), configFilesMap); err != nil {
+			return nil, err
+		}
 	}
+
+	return configFilesMap, nil
+}
+
+func (c *ClusterMigrator) fetchAllOptionFiles(configFilesMap *corev1.ConfigMap) (*corev1.ConfigMap, error) {
 
 	/*
 		// Parse through all $CONF_DIRECTORY/jvm*-server.options and write them to a ConfigMap
@@ -95,13 +112,10 @@ func (c *ConfigParser) fetchAllOptionFiles() (*corev1.ConfigMap, error) {
 			return nil
 		})
 	*/
-	if err := c.Client.Create(context.TODO(), configFilesMap); err != nil {
-		return nil, err
-	}
 	return configFilesMap, nil
 }
 
-func (c *ConfigParser) parseCassandraYaml(configFilesMap *corev1.ConfigMap) (*corev1.ConfigMap, error) {
+func (c *ClusterMigrator) parseCassandraYaml(configFilesMap *corev1.ConfigMap) (*corev1.ConfigMap, error) {
 	// Parse the $CONF_DIRECTORY/cassandra.yaml
 	yamlPath := filepath.Join(c.getConfigDir(), "cassandra.yaml")
 	yamlFile, err := os.ReadFile(yamlPath)
@@ -118,6 +132,46 @@ func (c *ConfigParser) parseCassandraYaml(configFilesMap *corev1.ConfigMap) (*co
 
 	if err := yaml.Unmarshal(yamlFile, target); err != nil {
 		return nil, err
+	}
+
+	/*
+		seed_provider:
+		    # Addresses of hosts that are deemed contact points.
+		    # Cassandra nodes use this list of hosts to find each other and learn
+		    # the topology of the ring.  You must change this if you are running
+		    # multiple nodes!
+		    - class_name: org.apache.cassandra.locator.SimpleSeedProvider
+		      parameters:
+		          # seeds is actually a comma-delimited list of addresses.
+		          # Ex: "<ip1>,<ip2>,<ip3>"
+		          - seeds: "127.0.0.1:7000"
+	*/
+
+	// Parse seeds
+	if seedProviders, ok := target["seed_provider"].([]interface{}); ok {
+		for _, seedProvider := range seedProviders {
+			if seedProv, ok := seedProvider.(map[string]interface{}); ok {
+				if params, found := seedProv["parameters"]; found {
+					if paramsSlice, ok := params.([]interface{}); ok {
+						for _, partSlice := range paramsSlice {
+							if castSlice, ok := partSlice.(map[string]interface{}); ok {
+								if seedList, found := castSlice["seeds"]; found {
+									seeds := strings.Split(seedList.(string), ",")
+									for _, seed := range seeds {
+										seedAddr := strings.Split(seed, ":")
+										if seedAddr[0] != "127.0.0.1" {
+											// Loopback isn't allowed endpoint value in Kubernetes
+											c.seeds = append(c.seeds, seedAddr[0])
+										}
+									}
+								}
+							}
+						}
+					}
+				}
+			}
+		}
+
 	}
 
 	// We could read some details here also instead of getseeds etc earlier..
@@ -150,7 +204,7 @@ func getConfigMapName(datacenter, configName string) string {
 	return fmt.Sprintf("%s-%s", datacenter, configName)
 }
 
-func (c *ConfigParser) getConfigDir() string {
+func (c *ClusterMigrator) getConfigDir() string {
 	// TODO Give the possibility to override config path
-	return fmt.Sprintf("%s/conf", c.cassandraHome)
+	return fmt.Sprintf("%s/conf", c.CassandraHome)
 }
