@@ -4,7 +4,9 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"time"
 
+	"github.com/burmanm/k8ssandra-client/pkg/cassdcutil"
 	cassdcapi "github.com/k8ssandra/cass-operator/apis/cassandra/v1beta1"
 	"github.com/pterm/pterm"
 	"gopkg.in/yaml.v3"
@@ -13,6 +15,8 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+
+	waitutil "k8s.io/apimachinery/pkg/util/wait"
 )
 
 /*
@@ -36,7 +40,14 @@ func (c *ClusterMigrator) FinishInstallation(p *pterm.SpinnerPrinter) error {
 
 	pterm.Success.Println("CassandraDatacenter definition created")
 
-	p.UpdateText("Waiting for cluster to be nurtured by the cass-operator...")
+	p.UpdateText("Waiting for Datacenter to finish reconciliation...")
+
+	err = c.waitForDatacenter()
+	if err != nil {
+		return err
+	}
+
+	pterm.Success.Println("CassandraDatacenter status is Ready")
 
 	pterm.Info.Println("Cluster is fully managed now, welcome to k8ssandra")
 
@@ -168,4 +179,16 @@ func (c *ClusterMigrator) createCassandraDatacenter() error {
 		return err
 	}
 	return nil
+}
+
+func (c *ClusterMigrator) waitForDatacenter() error {
+	mgr := cassdcutil.NewManager(c.Client)
+	dc, err := mgr.CassandraDatacenter(c.Datacenter, c.Namespace)
+	if err != nil {
+		return err
+	}
+
+	return waitutil.PollImmediate(10*time.Second, 10*time.Minute, func() (bool, error) {
+		return mgr.RefreshStatus(dc, cassdcapi.DatacenterReady, corev1.ConditionTrue)
+	})
 }
