@@ -8,12 +8,12 @@ import (
 	"strings"
 	"time"
 
-	"github.com/burmanm/k8ssandra-client/pkg/cassdcutil"
 	cassdcapi "github.com/k8ssandra/cass-operator/apis/cassandra/v1beta1"
 	"github.com/k8ssandra/cass-operator/pkg/images"
 	"github.com/k8ssandra/cass-operator/pkg/serverconfig"
 	"github.com/pterm/pterm"
 	"gopkg.in/yaml.v3"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -30,17 +30,12 @@ const (
 	SystemLoggerContainerName            = "server-system-logger"
 )
 
-func NewNodeMigrator(namespace, cassandraHome string) (*NodeMigrator, error) {
-	client, err := cassdcutil.GetClientInNamespace(namespace)
-	if err != nil {
-		return nil, err
-	}
-
+func NewNodeMigrator(cli client.Client, namespace, cassandraHome string) *NodeMigrator {
 	return &NodeMigrator{
-		Client:        client,
+		Client:        cli,
 		Namespace:     namespace,
 		CassandraHome: cassandraHome,
-	}, nil
+	}
 }
 
 func (n *NodeMigrator) MigrateNode(p *pterm.SpinnerPrinter) error {

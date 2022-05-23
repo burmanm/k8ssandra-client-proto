@@ -19,21 +19,54 @@ import (
 	waitutil "k8s.io/apimachinery/pkg/util/wait"
 )
 
-/*
-	Commands are: init, add, commit
-*/
+type MigrateFinisher struct {
+	client.Client
+	namespace        string
+	datacenter       string
+	clusterConfigMap ClusterConfigMap
+}
 
-/*
-	Commit:
-		* Install cass-operator using internal helm process (same this client otherwise uses)
-		* Create CassandraDatacenter
-		* Wait for magic to happen
-*/
+func NewMigrateFinisher(cli client.Client, namespace, datacenter string) *MigrateFinisher {
+	return &MigrateFinisher{
+		Client:     cli,
+		namespace:  namespace,
+		datacenter: datacenter,
+	}
+}
 
-func (c *ClusterMigrator) FinishInstallation(p *pterm.SpinnerPrinter) error {
+func (c *MigrateFinisher) fetchConfiguration() error {
+	configMap := &corev1.ConfigMap{}
+	configMapKey := types.NamespacedName{Name: configMapName(c.datacenter), Namespace: c.namespace}
+	if err := c.Client.Get(context.TODO(), configMapKey, configMap); err != nil {
+		return err
+	}
+
+	b := configMap.BinaryData["clusterInfo"]
+
+	clusterConfigMap := ClusterConfigMap{}
+	if err := json.Unmarshal(b, &clusterConfigMap); err != nil {
+		return err
+	}
+
+	c.clusterConfigMap = clusterConfigMap
+
+	return nil
+}
+
+func (c *MigrateFinisher) FinishInstallation(p *pterm.SpinnerPrinter) error {
+
+	p.UpdateText("Fetching cluster configuration...")
+
+	err := c.fetchConfiguration()
+	if err != nil {
+		return err
+	}
+
+	pterm.Success.Println("Cluster configuration fetched")
+
 	p.UpdateText("Creating CassandraDatacenter")
 
-	err := c.createCassandraDatacenter()
+	err = c.createCassandraDatacenter()
 	if err != nil {
 		return err
 	}
@@ -54,12 +87,12 @@ func (c *ClusterMigrator) FinishInstallation(p *pterm.SpinnerPrinter) error {
 	return nil
 }
 
-func (c *ClusterMigrator) countOfMigratedPods() (int, error) {
+func (c *MigrateFinisher) countOfMigratedPods() (int, error) {
 	// countOfMigratedPods failed: found 'Cluster', expected: ',' or 'end of string'
 	podList := &corev1.PodList{}
 	datacenterLabels := map[string]string{
-		cassdcapi.DatacenterLabel: c.Datacenter,
-		cassdcapi.ClusterLabel:    cassdcapi.CleanupForKubernetes(c.Cluster),
+		cassdcapi.DatacenterLabel: c.clusterConfigMap.Datacenter,
+		cassdcapi.ClusterLabel:    cassdcapi.CleanupForKubernetes(c.clusterConfigMap.Cluster),
 	}
 	if err := c.Client.List(context.TODO(), podList, client.MatchingLabels(datacenterLabels)); err != nil {
 		return 0, err
@@ -69,7 +102,7 @@ func (c *ClusterMigrator) countOfMigratedPods() (int, error) {
 
 }
 
-func (c *ClusterMigrator) createCassandraDatacenter() error {
+func (c *MigrateFinisher) createCassandraDatacenter() error {
 	// Fetch the amount of pods we created to ensure all the pods have been
 	// migrated before we continue
 	datacenterSize, err := c.countOfMigratedPods()
@@ -104,7 +137,7 @@ func (c *ClusterMigrator) createCassandraDatacenter() error {
 
 	// TODO Move to another function
 	configFilesMap := &corev1.ConfigMap{}
-	configFilesMapKey := types.NamespacedName{Name: getConfigMapName(c.Datacenter, "cass-config"), Namespace: c.Namespace}
+	configFilesMapKey := types.NamespacedName{Name: getConfigMapName(c.clusterConfigMap.Datacenter, "cass-config"), Namespace: c.namespace}
 	if err := c.Client.Get(context.TODO(), configFilesMapKey, configFilesMap); err != nil {
 		return err
 	}
@@ -126,14 +159,14 @@ func (c *ClusterMigrator) createCassandraDatacenter() error {
 
 	dc := &cassdcapi.CassandraDatacenter{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      c.Datacenter,
-			Namespace: c.Namespace,
+			Name:      c.clusterConfigMap.Datacenter,
+			Namespace: c.namespace,
 		},
 		Spec: cassdcapi.CassandraDatacenterSpec{
 			// TODO There is a cass-operator bug, it creates a label with non-valid characters (such as "Test Cluster")
-			ClusterName:   c.Cluster,
-			ServerType:    c.ServerType,
-			ServerVersion: c.ServerVersion,
+			ClusterName:   c.clusterConfigMap.Cluster,
+			ServerType:    c.clusterConfigMap.ServerType,
+			ServerVersion: c.clusterConfigMap.ServerVersion,
 			ManagementApiAuth: cassdcapi.ManagementApiAuthConfig{
 				Insecure: &cassdcapi.ManagementApiAuthInsecureConfig{},
 			},
@@ -181,9 +214,9 @@ func (c *ClusterMigrator) createCassandraDatacenter() error {
 	return nil
 }
 
-func (c *ClusterMigrator) waitForDatacenter() error {
+func (c *MigrateFinisher) waitForDatacenter() error {
 	mgr := cassdcutil.NewManager(c.Client)
-	dc, err := mgr.CassandraDatacenter(c.Datacenter, c.Namespace)
+	dc, err := mgr.CassandraDatacenter(c.clusterConfigMap.Datacenter, c.namespace)
 	if err != nil {
 		return err
 	}

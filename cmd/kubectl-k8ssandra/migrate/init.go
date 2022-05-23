@@ -41,7 +41,6 @@ const (
 type options struct {
 	configFlags *genericclioptions.ConfigFlags
 	genericclioptions.IOStreams
-	targetVersion string
 	namespace     string
 	nodetoolPath  string
 	cassandraHome string
@@ -117,15 +116,6 @@ func (c *options) Complete(cmd *cobra.Command, args []string) error {
 	c.cfg = actionConfig
 
 	return nil
-
-	// var err error
-	// if len(args) < 0 {
-	// 	return errNotEnoughParameters
-	// }
-
-	// c.targetVersion = args[0]
-	// c.namespace, _, err = c.configFlags.ToRawKubeConfigLoader().Namespace()
-	// return err
 }
 
 // Validate ensures that all required arguments and flag values are provided
@@ -216,40 +206,28 @@ func (c *options) Run() error {
 	}
 
 	/*
-		configParser := migrate.NewParser(client, c.namespace, c.cassandraHome, migrator.Datacenter)
+		n, err := migrate.NewNodeMigrator(c.namespace, c.cassandraHome)
 		if err != nil {
 			return err
 		}
 
-		err = configParser.ParseConfigs(spinnerLiveText)
+		if c.nodetoolPath != "" {
+			n.NodetoolPath = c.nodetoolPath
+		}
+
+		err = n.MigrateNode(spinnerLiveText)
 		if err != nil {
-			pterm.Error.Printf("Failed to parse local Cassandra node configuration: %v", err)
+			pterm.Error.Printf("Failed to migrate local Cassandra node to Kubernetes: %v", err)
 			return err
 		}
 
-		pterm.Info.Println("Initialized and parsed current Cassandra configuration. You may now review configuration before proceeding with node migration")
+		spinnerLiveText.Success("Cassandra node has been successfully migrated to Kubernetes")
+
+		err = migrator.FinishInstallation(spinnerLiveText)
+		if err != nil {
+			pterm.Error.Printf("Failed to finish the k8ssandra installation: %v", err)
+			return err
+		}
 	*/
-	n, err := migrate.NewNodeMigrator(c.namespace, c.cassandraHome)
-	if err != nil {
-		return err
-	}
-
-	if c.nodetoolPath != "" {
-		n.NodetoolPath = c.nodetoolPath
-	}
-
-	err = n.MigrateNode(spinnerLiveText)
-	if err != nil {
-		pterm.Error.Printf("Failed to migrate local Cassandra node to Kubernetes: %v", err)
-		return err
-	}
-
-	spinnerLiveText.Success("Cassandra node has been successfully migrated to Kubernetes")
-
-	err = migrator.FinishInstallation(spinnerLiveText)
-	if err != nil {
-		pterm.Error.Printf("Failed to finish the k8ssandra installation: %v", err)
-		return err
-	}
 	return nil
 }

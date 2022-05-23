@@ -214,6 +214,7 @@ type ClusterConfigMap struct {
 	Cluster       string             `json:"cluster"`
 	ServerType    string             `json:"serverType"`
 	ServerVersion string             `json:"serverVersion"`
+	Datacenter    string             `json:"datacenter"`
 	NodeInfos     []NodetoolNodeInfo `json:"nodeinfos"`
 }
 
@@ -296,6 +297,7 @@ func (c *ClusterMigrator) CreateClusterConfigMap() error {
 			Cluster:       c.Cluster,
 			ServerVersion: c.ServerVersion,
 			ServerType:    c.ServerType,
+			Datacenter:    c.Datacenter,
 			NodeInfos:     nodeInfos,
 		}
 		/*
