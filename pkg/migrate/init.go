@@ -57,6 +57,9 @@ type ClusterMigrator struct {
 	ServerVersion string
 
 	seeds []string
+
+	// TODO Move these away..?
+	clusterConfigMap ClusterConfigMap
 }
 
 func NewClusterMigrator(client client.Client, namespace, cassandraHome string) (*ClusterMigrator, error) {
@@ -207,6 +210,13 @@ func (c *ClusterMigrator) CreateSeedServices() error {
 	return nil
 }
 
+type ClusterConfigMap struct {
+	Cluster       string             `json:"cluster"`
+	ServerType    string             `json:"serverType"`
+	ServerVersion string             `json:"serverVersion"`
+	NodeInfos     []NodetoolNodeInfo `json:"nodeinfos"`
+}
+
 func (c *ClusterMigrator) CreateClusterConfigMap() error {
 	// TODO Or should we use nodetool info first and then just find the correct one?
 	output, err := execNodetool(c.getNodetoolPath(), "gossipinfo")
@@ -282,17 +292,38 @@ func (c *ClusterMigrator) CreateClusterConfigMap() error {
 
 		configMap.ObjectMeta.Name = configMapName(c.Datacenter)
 		configMap.ObjectMeta.Namespace = c.Namespace
-		infoMap := map[string]string{
-			"cluster":       c.Cluster,
-			"serverVersion": c.ServerVersion,
-			"serverType":    c.ServerType,
+		clusterConfigMap := ClusterConfigMap{
+			Cluster:       c.Cluster,
+			ServerVersion: c.ServerVersion,
+			ServerType:    c.ServerType,
+			NodeInfos:     nodeInfos,
 		}
-		i := 0
-		// Create ordinal information for the next stages
-		for _, nodeInfo := range nodeInfos {
-			infoMap[nodeInfo.HostId] = strconv.Itoa(i)
+		/*
+			infoMap := map[string]interface{}{
+				"cluster":       c.Cluster,
+				"serverVersion": c.ServerVersion,
+				"serverType":    c.ServerType,
+			}
+			i := 0
+			// Create ordinal information for the next stages
+			for _, nodeInfo := range nodeInfos {
+				infoMap[nodeInfo.HostId] = map[string]string{
+					"ordinal": strconv.Itoa(i),
+					"rack":    nodeInfo.Rack,
+				}
+			}
+			configMap.Data = infoMap
+		*/
+
+		c.clusterConfigMap = clusterConfigMap
+
+		b, err := json.Marshal(clusterConfigMap)
+		configMap.BinaryData = make(map[string][]byte)
+		configMap.BinaryData["clusterInfo"] = b
+		if err != nil {
+			return err
 		}
-		configMap.Data = infoMap
+
 		if err := c.Client.Create(context.TODO(), configMap); err != nil {
 			return err
 		}
@@ -421,11 +452,12 @@ func (c *ClusterMigrator) endpointsForAdditionalSeeds(seeds []string) (*corev1.E
 }
 
 type NodetoolNodeInfo struct {
-	Status  string
-	State   string
-	Address string
-	HostId  string
-	Rack    string
+	Status  string `json:"status"`
+	State   string `json:"state"`
+	Address string `json:"address"`
+	HostId  string `json:"hostId"`
+	Rack    string `json:"rack"`
+	Ordinal string `json:"ordinal"`
 }
 
 // From cass-operator tests
@@ -454,6 +486,7 @@ func (c *ClusterMigrator) retrieveStatusFromNodetool() ([]NodetoolNodeInfo, erro
 
 	nodeTexts := regexp.MustCompile(`(?m)^.*(([0-9a-fA-F]+-){4}([0-9a-fA-F]+)).*$`).FindAllString(output, -1)
 	nodeInfo := []NodetoolNodeInfo{}
+	ordinal := 0
 	for _, nodeText := range nodeTexts {
 		comps := regexp.MustCompile(`[[:space:]]+`).Split(strings.TrimSpace(nodeText), -1)
 		nodeInfo = append(nodeInfo,
@@ -463,7 +496,9 @@ func (c *ClusterMigrator) retrieveStatusFromNodetool() ([]NodetoolNodeInfo, erro
 				Address: comps[1],
 				HostId:  comps[len(comps)-2],
 				Rack:    comps[len(comps)-1],
+				Ordinal: strconv.Itoa(ordinal),
 			})
+		ordinal++
 	}
 	return nodeInfo, nil
 }

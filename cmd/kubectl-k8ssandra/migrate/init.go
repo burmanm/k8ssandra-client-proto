@@ -182,7 +182,7 @@ func (c *options) Run() error {
 		return err
 	}
 
-	pterm.Success.Println("Downloaded cass-operator")
+	pterm.Success.Println("Downloaded cass-operator chart")
 
 	_, err = helmutil.Install(c.cfg, releaseName, downloadPath, c.namespace, cassOperatorValues)
 	if err != nil {
@@ -190,7 +190,7 @@ func (c *options) Run() error {
 		return err
 	}
 
-	pterm.Success.Println("Installed cass-operator")
+	pterm.Success.Println("Installed cass-operator chart")
 
 	spinnerLiveText.UpdateText("Waiting for cass-operator to start...")
 
@@ -246,5 +246,10 @@ func (c *options) Run() error {
 
 	spinnerLiveText.Success("Cassandra node has been successfully migrated to Kubernetes")
 
+	err = migrator.FinishInstallation(spinnerLiveText)
+	if err != nil {
+		pterm.Error.Printf("Failed to finish the k8ssandra installation: %v", err)
+		return err
+	}
 	return nil
 }

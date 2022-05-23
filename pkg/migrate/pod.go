@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"os/exec"
 	"strconv"
 	"strings"
 	"time"
@@ -135,17 +134,32 @@ func (n *NodeMigrator) getNodeInfo() error {
 		return err
 	}
 
-	ordinalNumber, found := configMap.Data[n.HostID]
-	if !found {
+	// TODO Unmarshal this one..
+	b := configMap.BinaryData["clusterInfo"]
+
+	clusterConfigMap := ClusterConfigMap{}
+	err = json.Unmarshal(b, &clusterConfigMap)
+	if err != nil {
+		return err
+	}
+
+	for _, nodeInfo := range clusterConfigMap.NodeInfos {
+		if nodeInfo.HostId == n.HostID {
+			n.Ordinal = nodeInfo.Ordinal
+			break
+		}
+	}
+
+	if n.Ordinal == "" {
 		return fmt.Errorf("this node was not part of the init process")
 	}
-	n.Ordinal = ordinalNumber
-	n.ServerType = configMap.Data["serverType"]
-	n.ServerVersion = configMap.Data["serverVersion"]
-	n.Cluster = configMap.Data["cluster"]
+
+	n.ServerType = clusterConfigMap.ServerType
+	n.ServerVersion = clusterConfigMap.ServerVersion
+	n.Cluster = clusterConfigMap.Cluster
 
 	// TODO Verify kubenode
-	kubeNode, err := getLocalKubeNode()
+	kubeNode, err := n.getLocalKubeNode()
 	if err != nil {
 		return err
 	}
@@ -154,16 +168,38 @@ func (n *NodeMigrator) getNodeInfo() error {
 	return nil
 }
 
-func getLocalKubeNode() (string, error) {
-	// TODO This isn't real one yet. Parse from output the correct node based on the local IP
-	out, err := exec.Command("/usr/bin/kubectl", "get", "nodes", "-o", "wide").Output()
-	if err != nil {
+func (n *NodeMigrator) getLocalKubeNode() (string, error) {
+	// TODO Use client to get all the nodes and compare the IP address
+	nodes := &corev1.NodeList{}
+	if err := n.Client.List(context.TODO(), nodes); err != nil {
 		return "", err
 	}
 
-	lines := strings.Split(string(out), "\n")
-	columns := strings.Split(lines[1], " ")
-	return strings.Trim(columns[0], " "), nil
+	// TODO Get this from elsewhere
+	hardcodedLocalIP := "192.168.1.179"
+
+	for _, node := range nodes.Items {
+		for _, addr := range node.Status.Addresses {
+			if addr.Type == corev1.NodeInternalIP {
+				if addr.Address == hardcodedLocalIP {
+					return node.Name, nil
+				}
+				break
+			}
+		}
+	}
+
+	return "", fmt.Errorf("failed to find local Kubernetes node")
+
+	// // TODO This isn't real one yet. Parse from output the correct node based on the local IP
+	// out, err := exec.Command("/usr/bin/kubectl", "get", "nodes", "-o", "wide").Output()
+	// if err != nil {
+	// 	return "", err
+	// }
+
+	// lines := strings.Split(string(out), "\n")
+	// columns := strings.Split(lines[1], " ")
+	// return strings.Trim(columns[0], " "), nil
 }
 
 func (n *NodeMigrator) drainAndShutdownNode() error {
@@ -176,8 +212,17 @@ func (n *NodeMigrator) drainAndShutdownNode() error {
 	return err
 }
 
+func (n *NodeMigrator) getGenerateName() string {
+	return fmt.Sprintf("%s-%s-%s-sts-", cassdcapi.CleanupForKubernetes(n.Cluster), n.Datacenter, n.Rack)
+}
+
 func (n *NodeMigrator) getPodName() string {
-	return fmt.Sprintf("%s-%s-%s-sts-%s", cassdcapi.CleanupForKubernetes(n.Cluster), n.Datacenter, n.Rack, n.Ordinal)
+	return n.getGenerateName() + n.Ordinal
+	// return fmt.Sprintf("%s-%s-%s-sts-%s", cassdcapi.CleanupForKubernetes(n.Cluster), n.Datacenter, n.Rack, n.Ordinal)
+}
+
+func (n *NodeMigrator) getAllPodsServiceName() string {
+	return fmt.Sprintf("%s-%s-all-pods-service", cassdcapi.CleanupForKubernetes(n.Cluster), n.Datacenter)
 }
 
 func (n *NodeMigrator) isSeed() bool {
@@ -205,12 +250,14 @@ func (n *NodeMigrator) CreatePod() error {
 
 	userId := int64(999)
 	userGroup := int64(999)
+	// TODO A placeholder in the dev machine
 	fsGroup := int64(1001)
 
 	pod := &corev1.Pod{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      n.getPodName(),
-			Namespace: n.Namespace,
+			Name:         n.getPodName(),
+			Namespace:    n.Namespace,
+			GenerateName: n.getGenerateName(),
 			Labels: map[string]string{
 				"statefulset.kubernetes.io/pod-name": n.getPodName(),
 				cassdcapi.SeedNodeLabel:              strconv.FormatBool(n.isSeed()),
@@ -226,6 +273,7 @@ func (n *NodeMigrator) CreatePod() error {
 			DNSPolicy:          corev1.DNSClusterFirstWithHostNet,
 			EnableServiceLinks: &enableServiceLinks,
 			Hostname:           n.getPodName(),
+			Subdomain:          n.getAllPodsServiceName(),
 			InitContainers:     initContainers,
 			NodeName:           n.KubeNode,
 			// SecurityContext should mimic whatever is running currently the DSE / Cassandra installation
@@ -279,7 +327,7 @@ func (n *NodeMigrator) StartPod() error {
 
 	pterm.Success.Println("Management API has started")
 
-	n.p.UpdateText("Calling Cassandra start...")
+	// n.p.UpdateText("Calling Cassandra start...")
 	// Call the Cassandra start
 	err = mgmtClient.CallLifecycleStartEndpoint(pod)
 	if err != nil {
