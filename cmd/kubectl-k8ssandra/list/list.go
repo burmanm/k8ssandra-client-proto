@@ -115,6 +115,7 @@ type releaseElement struct {
 	Status           string `json:"status"`
 	ChartVersion     string `json:"chart_version"`
 	CassandraVersion string `json:"cass_version"`
+	Chart            string `json:"chart"`
 }
 
 func printReleases(releases []*release.Release) {
@@ -128,6 +129,7 @@ func printReleases(releases []*release.Release) {
 			Revision:     strconv.Itoa(r.Version),
 			Status:       r.Info.Status.String(),
 			ChartVersion: r.Chart.Metadata.Version,
+			Chart:        r.Chart.Name(),
 			Updated:      r.Info.LastDeployed.Local().String(),
 			// CassandraVersion: r.Chart.Values["cassandra"]["version"],
 		}

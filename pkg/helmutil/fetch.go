@@ -40,7 +40,7 @@ func DownloadChartRelease(chartName, targetVersion string) (string, error) {
 
 	// helm repo add k8ssandra https://helm.k8ssandra.io/
 	r, err := repo.NewChartRepository(&repo.Entry{
-		Name: ChartName,
+		Name: RepoName,
 		URL:  RepoURL,
 	}, getter.All(settings))
 

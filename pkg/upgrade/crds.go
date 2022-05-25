@@ -55,13 +55,13 @@ func New(namespace string) (*Upgrader, error) {
 
 // Upgrade installs the missing CRDs or updates them if they exists already
 func (u *Upgrader) Upgrade(targetVersion string) error {
-	extractDir, err := helmutil.DownloadChartRelease(helmutil.ChartName, targetVersion)
+	extractDir, err := helmutil.DownloadChartRelease(helmutil.RepoName, targetVersion)
 	if err != nil {
 		return err
 	}
 
 	// reaper and medusa subdirs have the required yaml files
-	chartPath := filepath.Join(extractDir, helmutil.ChartName)
+	chartPath := filepath.Join(extractDir, helmutil.RepoName)
 	defer os.RemoveAll(chartPath)
 
 	crds := make([]unstructured.Unstructured, 0)
