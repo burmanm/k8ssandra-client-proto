@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"net"
 	"strconv"
 	"strings"
 	"time"
@@ -43,18 +44,21 @@ func (n *NodeMigrator) MigrateNode(p *pterm.SpinnerPrinter) error {
 	// TODO Use the ButterTea or something for prettier output
 	p.UpdateText("Getting Cassandra node information")
 
+	cfgParser := NewParser(n.CassandraHome)
+	if err := cfgParser.ParseConfigs(); err != nil {
+		return err
+	}
+
 	// Fetch current node information for cluster+datacenter+rack+hostUUID
 	// Fetch the clusterConfig for ordinal selection
-	err := n.getNodeInfo()
-	if err != nil {
+	if err := n.getNodeInfo(cfgParser.CassYaml()); err != nil {
 		return err
 	}
 	pterm.Success.Println("Gathered information from local Cassandra node")
 
 	// Drain and shutdown the current node
 	p.UpdateText("Draining and shutting down the current node")
-	err = n.drainAndShutdownNode()
-	if err != nil {
+	if err := n.drainAndShutdownNode(); err != nil {
 		return err
 	}
 	pterm.Success.Println("Local Cassandra node drained and shutdown")
@@ -63,8 +67,7 @@ func (n *NodeMigrator) MigrateNode(p *pterm.SpinnerPrinter) error {
 
 	// Create PVC + PV
 	p.UpdateText("Mounting directories to Kubernetes")
-	err = n.createVolumeMounts()
-	if err != nil {
+	if err := n.createVolumeMounts(); err != nil {
 		return err
 	}
 	pterm.Success.Println("Mounted local directories to Kubernetes")
@@ -72,8 +75,7 @@ func (n *NodeMigrator) MigrateNode(p *pterm.SpinnerPrinter) error {
 	// Create the pod
 	p.UpdateText("Creating pod that runs Cassandra in Kubernetes")
 	images.ParseImageConfig("/home/michael/projects/git/datastax/cass-operator/config/manager/image_config.yaml")
-	err = n.CreatePod()
-	if err != nil {
+	if err := n.CreatePod(); err != nil {
 		return err
 	}
 
@@ -82,8 +84,7 @@ func (n *NodeMigrator) MigrateNode(p *pterm.SpinnerPrinter) error {
 	// Run startCassandra on the node
 	p.UpdateText("Starting Cassandra node on the Kubernetes cluster")
 
-	err = n.StartPod()
-	if err != nil {
+	if err := n.StartPod(); err != nil {
 		return err
 	}
 
@@ -100,7 +101,7 @@ func (n *NodeMigrator) getNodetoolPath() string {
 	return fmt.Sprintf("%s/bin", n.CassandraHome)
 }
 
-func (n *NodeMigrator) getNodeInfo() error {
+func (n *NodeMigrator) getNodeInfo(cassConfig map[string]interface{}) error {
 	output, err := execNodetool(n.getNodetoolPath(), "info")
 	if err != nil {
 		return err
@@ -154,7 +155,7 @@ func (n *NodeMigrator) getNodeInfo() error {
 	n.Cluster = clusterConfigMap.Cluster
 
 	// TODO Verify kubenode
-	kubeNode, err := n.getLocalKubeNode()
+	kubeNode, err := n.getLocalKubeNode(cassConfig)
 	if err != nil {
 		return err
 	}
@@ -163,38 +164,71 @@ func (n *NodeMigrator) getNodeInfo() error {
 	return nil
 }
 
-func (n *NodeMigrator) getLocalKubeNode() (string, error) {
+func (n *NodeMigrator) getLocalKubeNode(cassConfig map[string]interface{}) (string, error) {
 	// TODO Use client to get all the nodes and compare the IP address
 	nodes := &corev1.NodeList{}
 	if err := n.Client.List(context.TODO(), nodes); err != nil {
 		return "", err
 	}
 
-	// TODO Get this from elsewhere
-	hardcodedLocalIP := "192.168.1.179"
+	// TODO What about IPv6?
 
-	for _, node := range nodes.Items {
-		for _, addr := range node.Status.Addresses {
-			if addr.Type == corev1.NodeInternalIP {
-				if addr.Address == hardcodedLocalIP {
-					return node.Name, nil
+	targetIP := ""
+
+	if addr, found := cassConfig["listen_address"]; found {
+		ipAddr := addr.(string)
+		if ipAddr != "" && ipAddr != "0.0.0.0" {
+			// TODO Should not be loopback either
+			targetIP = ipAddr
+		}
+	}
+
+	if eth, found := cassConfig["listen_interface"]; found {
+		ethName := eth.(string)
+		ifaces, err := net.Interfaces()
+		if err != nil {
+			return "", err
+		}
+
+		for _, i := range ifaces {
+			if i.Name != ethName {
+				continue
+			}
+
+			addrs, err := i.Addrs()
+			if err != nil {
+				return "", err
+			}
+			for _, addr := range addrs {
+				var ip net.IP
+				switch v := addr.(type) {
+				case *net.IPNet:
+					ip = v.IP
+				case *net.IPAddr:
+					ip = v.IP
 				}
-				break
+				if ip != nil {
+					targetIP = ip.String()
+					break
+				}
+			}
+		}
+	}
+
+	if targetIP != "" {
+		for _, node := range nodes.Items {
+			for _, addr := range node.Status.Addresses {
+				if addr.Type == corev1.NodeInternalIP {
+					if addr.Address == targetIP {
+						return node.Name, nil
+					}
+					break
+				}
 			}
 		}
 	}
 
 	return "", fmt.Errorf("failed to find local Kubernetes node")
-
-	// // TODO This isn't real one yet. Parse from output the correct node based on the local IP
-	// out, err := exec.Command("/usr/bin/kubectl", "get", "nodes", "-o", "wide").Output()
-	// if err != nil {
-	// 	return "", err
-	// }
-
-	// lines := strings.Split(string(out), "\n")
-	// columns := strings.Split(lines[1], " ")
-	// return strings.Trim(columns[0], " "), nil
 }
 
 func (n *NodeMigrator) drainAndShutdownNode() error {
@@ -263,7 +297,7 @@ func (n *NodeMigrator) CreatePod() error {
 		},
 		Spec: corev1.PodSpec{
 			HostNetwork:        true,
-			Affinity:           &corev1.Affinity{},
+			Affinity:           n.podAffinity(),
 			Containers:         containers,
 			DNSPolicy:          corev1.DNSClusterFirstWithHostNet,
 			EnableServiceLinks: &enableServiceLinks,
@@ -287,6 +321,49 @@ func (n *NodeMigrator) CreatePod() error {
 	}
 
 	return nil
+}
+
+func (n *NodeMigrator) podAffinity() *corev1.Affinity {
+	return &corev1.Affinity{
+		NodeAffinity: &corev1.NodeAffinity{
+			RequiredDuringSchedulingIgnoredDuringExecution: &corev1.NodeSelector{
+				NodeSelectorTerms: []corev1.NodeSelectorTerm{
+					{
+						MatchExpressions: []corev1.NodeSelectorRequirement{
+							{
+								Key:      corev1.LabelHostname,
+								Operator: corev1.NodeSelectorOpIn,
+								Values:   []string{n.KubeNode},
+							},
+						},
+					},
+				},
+			},
+		},
+		PodAntiAffinity: &corev1.PodAntiAffinity{
+			RequiredDuringSchedulingIgnoredDuringExecution: []corev1.PodAffinityTerm{
+				{
+					LabelSelector: &metav1.LabelSelector{
+						MatchExpressions: []metav1.LabelSelectorRequirement{
+							{
+								Key:      cassdcapi.ClusterLabel,
+								Operator: metav1.LabelSelectorOpExists,
+							},
+							{
+								Key:      cassdcapi.DatacenterLabel,
+								Operator: metav1.LabelSelectorOpExists,
+							},
+							{
+								Key:      cassdcapi.RackLabel,
+								Operator: metav1.LabelSelectorOpExists,
+							},
+						},
+					},
+					TopologyKey: corev1.LabelHostname,
+				},
+			},
+		},
+	}
 }
 
 func (n *NodeMigrator) StartPod() error {

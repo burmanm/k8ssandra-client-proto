@@ -1,8 +1,10 @@
 package migrate
 
 import (
+	"bufio"
 	"context"
 	"fmt"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -15,43 +17,66 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 )
 
-// type ConfigParser struct {
-// 	client.Client
-// 	cassandraHome string
-// 	datacenter    string
-// 	namespace     string
-// }
+type ConfigParser struct {
+	cassandraHome string
+	cassandraYaml map[string]interface{}
+	jvmOptions    map[string]string
+}
+
+func (p *ConfigParser) CassYaml() map[string]interface{} {
+	return p.cassandraYaml
+}
+
+func (p *ConfigParser) JvmOptions(jdkVersion string) string {
+	keyName := p.getJvmOptionsKey(jdkVersion)
+	return p.jvmOptions[keyName]
+}
+
+func (p *ConfigParser) ParseConfigs() error {
+	if err := p.parseCassandraYaml(); err != nil {
+		return err
+	}
+
+	if err := p.parseJVMOptions(); err != nil {
+		return err
+	}
+
+	return nil
+}
 
 var serverOptionName = regexp.MustCompile("^jvm.*-server.options$")
 
-// func NewParser(client client.Client, namespace, cassandraHome, datacenter string) *ConfigParser {
-// 	return &ConfigParser{
-// 		Client:        client,
-// 		cassandraHome: cassandraHome,
-// 		datacenter:    datacenter,
-// 		namespace:     namespace,
-// 	}
-// }
+func NewParser(cassandraHome string) *ConfigParser {
+	return &ConfigParser{
+		cassandraHome: cassandraHome,
+		jvmOptions:    make(map[string]string),
+		cassandraYaml: make(map[string]interface{}),
+	}
+}
 
 func (c *ClusterMigrator) ParseConfigs(p *pterm.SpinnerPrinter) error {
+	cfgParser := NewParser(c.CassandraHome)
+	if err := cfgParser.ParseConfigs(); err != nil {
+		return err
+	}
+
 	confMap, err := c.getOrCreateConfigMap()
 	if err != nil {
 		return err
 	}
 
-	p.UpdateText("Parsing all JVM options files")
-	confMap, err = c.fetchAllOptionFiles(confMap)
+	p.UpdateText("Parsing all Cassandra configuration files")
+	err = cfgParser.ParseConfigs()
 	if err != nil {
 		return err
 	}
-	pterm.Success.Println("Stored all JVM options to Kubernetes")
 
-	p.UpdateText("Parsing cassandra.yaml")
-	_, err = c.parseCassandraYaml(confMap)
+	p.UpdateText("Storing configs to Kubernetes")
+	_, err = c.storeConfigFiles(confMap, cfgParser.CassYaml())
 	if err != nil {
 		return err
 	}
-	pterm.Success.Println("Parsed and stored cassandra.yaml to Kubernetes")
+	pterm.Success.Println("Parsed and stored Cassandra configuration files to Kubernetes")
 
 	return nil
 }
@@ -73,82 +98,76 @@ func (c *ClusterMigrator) getOrCreateConfigMap() (*corev1.ConfigMap, error) {
 	return configFilesMap, nil
 }
 
-func (c *ClusterMigrator) fetchAllOptionFiles(configFilesMap *corev1.ConfigMap) (*corev1.ConfigMap, error) {
-
-	/*
-		// Parse through all $CONF_DIRECTORY/jvm*-server.options and write them to a ConfigMap
-		filepath.WalkDir(c.getConfigDir(), func(path string, d fs.DirEntry, err error) error {
-			if d.IsDir() {
-				// We're not processing subdirs
-				return nil
-			}
-			if serverOptionName.MatchString(d.Name()) {
-				// Parse this file and add it to the ConfigMap
-				f, err := os.Open(path)
-				if err != nil {
-					return err
-				}
-
-				defer f.Close()
-
-				var configData strings.Builder
-
-				// Remove the comment lines to reduce the ConfigMap size
-				scanner := bufio.NewScanner(f)
-				for scanner.Scan() {
-					line := scanner.Text()
-					if !strings.HasPrefix(line, "#") {
-						configData.WriteString(line)
-					}
-				}
-
-				if err := scanner.Err(); err != nil {
-					return err
-				}
-
-				keyName := strings.ReplaceAll(d.Name(), ".", "-")
-				configFilesMap.Data[keyName] = configData.String()
-			}
+func (p *ConfigParser) parseJVMOptions() error {
+	// Parse through all $CONF_DIRECTORY/jvm*-server.options and write them to a ConfigMap
+	filepath.WalkDir(p.getConfigDir(), func(path string, d fs.DirEntry, err error) error {
+		if d.IsDir() {
+			// We're not processing subdirs
 			return nil
-		})
-	*/
-	return configFilesMap, nil
+		}
+		if serverOptionName.MatchString(d.Name()) {
+			// Parse this file and add it to the ConfigMap
+			f, err := os.Open(path)
+			if err != nil {
+				return err
+			}
+
+			defer f.Close()
+
+			var configData strings.Builder
+
+			// Remove the comment lines to reduce the ConfigMap size
+			scanner := bufio.NewScanner(f)
+			for scanner.Scan() {
+				line := scanner.Text()
+				if !strings.HasPrefix(line, "#") {
+					configData.WriteString(line)
+				}
+			}
+
+			if err := scanner.Err(); err != nil {
+				return err
+			}
+
+			keyName := strings.ReplaceAll(d.Name(), ".", "-")
+			p.jvmOptions[keyName] = configData.String()
+		}
+		return nil
+	})
+
+	return nil
 }
 
-func (c *ClusterMigrator) parseCassandraYaml(configFilesMap *corev1.ConfigMap) (*corev1.ConfigMap, error) {
+func (p *ConfigParser) getJvmOptionsKey(jdkVersion string) string {
+	return strings.ReplaceAll(fmt.Sprintf("jvm%s-server.options", jdkVersion), ".", "-")
+}
+
+func (p *ConfigParser) parseCassandraYaml() error {
 	// Parse the $CONF_DIRECTORY/cassandra.yaml
-	yamlPath := filepath.Join(c.getConfigDir(), "cassandra.yaml")
+	yamlPath := filepath.Join(p.getConfigDir(), "cassandra.yaml")
 	yamlFile, err := os.ReadFile(yamlPath)
 	if err != nil {
-		return nil, err
-	}
-
-	if configFilesMap.Data == nil {
-		configFilesMap.Data = make(map[string]string)
+		return err
 	}
 
 	// Unmarshal, Marshal to remove all comments (and some fields if necessary)
 	target := make(map[string]interface{})
 
 	if err := yaml.Unmarshal(yamlFile, target); err != nil {
-		return nil, err
+		return err
 	}
 
-	/*
-		seed_provider:
-		    # Addresses of hosts that are deemed contact points.
-		    # Cassandra nodes use this list of hosts to find each other and learn
-		    # the topology of the ring.  You must change this if you are running
-		    # multiple nodes!
-		    - class_name: org.apache.cassandra.locator.SimpleSeedProvider
-		      parameters:
-		          # seeds is actually a comma-delimited list of addresses.
-		          # Ex: "<ip1>,<ip2>,<ip3>"
-		          - seeds: "127.0.0.1:7000"
-	*/
+	p.cassandraYaml = target
+	return nil
+}
+
+func (c *ClusterMigrator) storeConfigFiles(configFilesMap *corev1.ConfigMap, cassYaml map[string]interface{}) (*corev1.ConfigMap, error) {
+	if configFilesMap.Data == nil {
+		configFilesMap.Data = make(map[string]string)
+	}
 
 	// Parse seeds
-	if seedProviders, ok := target["seed_provider"].([]interface{}); ok {
+	if seedProviders, ok := cassYaml["seed_provider"].([]interface{}); ok {
 		for _, seedProvider := range seedProviders {
 			if seedProv, ok := seedProvider.(map[string]interface{}); ok {
 				if params, found := seedProv["parameters"]; found {
@@ -174,22 +193,14 @@ func (c *ClusterMigrator) parseCassandraYaml(configFilesMap *corev1.ConfigMap) (
 
 	}
 
-	// We could read some details here also instead of getseeds etc earlier..
-	delete(target, "seed_provider")
+	// These keys are not used in the Kubernetes installation
+	delete(cassYaml, "seed_provider")
+	delete(cassYaml, "listen_address")
 
-	out, err := yaml.Marshal(target)
+	out, err := yaml.Marshal(cassYaml)
 	if err != nil {
 		return nil, err
 	}
-
-	// configFilesMap := &corev1.ConfigMap{
-	// 	ObjectMeta: metav1.ObjectMeta{
-	// 		Name: getConfigMapName(c.datacenter, "cass-config"),
-	// 	},
-	// 	Data: map[string]string{
-	// 		"cassandra.yaml": string(out),
-	// 	},
-	// }
 
 	configFilesMap.Data["cassandra-yaml"] = string(out)
 
@@ -204,7 +215,7 @@ func getConfigMapName(datacenter, configName string) string {
 	return fmt.Sprintf("%s-%s", datacenter, configName)
 }
 
-func (c *ClusterMigrator) getConfigDir() string {
+func (p *ConfigParser) getConfigDir() string {
 	// TODO Give the possibility to override config path
-	return fmt.Sprintf("%s/conf", c.CassandraHome)
+	return fmt.Sprintf("%s/conf", p.cassandraHome)
 }
