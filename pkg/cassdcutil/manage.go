@@ -62,7 +62,7 @@ func (c *CassManager) ModifyStoppedState(name, namespace string, stop, wait bool
 	if wait {
 		if stop {
 			err = waitutil.PollImmediate(10*time.Second, 10*time.Minute, func() (bool, error) {
-				return c.refreshStatus(cassdc, cassdcapi.DatacenterStopped, corev1.ConditionTrue)
+				return c.RefreshStatus(cassdc, cassdcapi.DatacenterStopped, corev1.ConditionTrue)
 			})
 			if err != nil {
 				return err
@@ -70,12 +70,12 @@ func (c *CassManager) ModifyStoppedState(name, namespace string, stop, wait bool
 
 			// And wait for it to finish..
 			return waitutil.PollImmediate(10*time.Second, 10*time.Minute, func() (bool, error) {
-				return c.refreshStatus(cassdc, cassdcapi.DatacenterReady, corev1.ConditionFalse)
+				return c.RefreshStatus(cassdc, cassdcapi.DatacenterReady, corev1.ConditionFalse)
 			})
 		}
 
 		err = waitutil.PollImmediate(10*time.Second, 10*time.Minute, func() (bool, error) {
-			return c.refreshStatus(cassdc, cassdcapi.DatacenterStopped, corev1.ConditionFalse)
+			return c.RefreshStatus(cassdc, cassdcapi.DatacenterStopped, corev1.ConditionFalse)
 		})
 		if err != nil {
 			return err
@@ -83,7 +83,7 @@ func (c *CassManager) ModifyStoppedState(name, namespace string, stop, wait bool
 
 		// And wait for it to finish..
 		return waitutil.PollImmediate(10*time.Second, 10*time.Minute, func() (bool, error) {
-			return c.refreshStatus(cassdc, cassdcapi.DatacenterReady, corev1.ConditionTrue)
+			return c.RefreshStatus(cassdc, cassdcapi.DatacenterReady, corev1.ConditionTrue)
 		})
 	}
 
@@ -108,7 +108,7 @@ func (c *CassManager) RollingRestart(name, namespace string, wait bool) error {
 	if wait {
 		// Wait for rolling restart to start..
 		err = waitutil.PollImmediate(10*time.Second, 10*time.Minute, func() (bool, error) {
-			return c.refreshStatus(cassdc, cassdcapi.DatacenterRollingRestart, corev1.ConditionTrue)
+			return c.RefreshStatus(cassdc, cassdcapi.DatacenterRollingRestart, corev1.ConditionTrue)
 		})
 		if err != nil {
 			return err
@@ -116,14 +116,14 @@ func (c *CassManager) RollingRestart(name, namespace string, wait bool) error {
 
 		// And wait for it to finish..
 		return waitutil.PollImmediate(10*time.Second, 10*time.Minute, func() (bool, error) {
-			return c.refreshStatus(cassdc, cassdcapi.DatacenterRollingRestart, corev1.ConditionFalse)
+			return c.RefreshStatus(cassdc, cassdcapi.DatacenterRollingRestart, corev1.ConditionFalse)
 		})
 	}
 
 	return nil
 }
 
-func (c *CassManager) refreshStatus(cassdc *cassdcapi.CassandraDatacenter, status cassdcapi.DatacenterConditionType, wanted corev1.ConditionStatus) (bool, error) {
+func (c *CassManager) RefreshStatus(cassdc *cassdcapi.CassandraDatacenter, status cassdcapi.DatacenterConditionType, wanted corev1.ConditionStatus) (bool, error) {
 	cassdc, err := c.CassandraDatacenter(cassdc.Name, cassdc.Namespace)
 	if err != nil {
 		return false, err

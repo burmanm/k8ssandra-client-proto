@@ -10,19 +10,20 @@ import (
 	"github.com/burmanm/k8ssandra-client/pkg/util"
 	"gopkg.in/yaml.v3"
 	"helm.sh/helm/v3/pkg/action"
+	"helm.sh/helm/v3/pkg/chart"
 	"helm.sh/helm/v3/pkg/chart/loader"
 	"helm.sh/helm/v3/pkg/cli"
 	"helm.sh/helm/v3/pkg/release"
 )
 
 // ChartVersion gets the release's chart version or returns an error if it did not exist
-func ChartVersion(cfg *action.Configuration, releaseName string) (string, error) {
+func ChartVersion(cfg *action.Configuration, releaseName string) (*chart.Chart, error) {
 	rel, err := Release(cfg, releaseName)
 	if err != nil {
-		return "", err
+		return nil, err
 	}
 
-	return rel.Chart.Metadata.Version, nil
+	return rel.Chart, nil
 }
 
 // SetValues returns the deployed Helm releases modified values
@@ -31,14 +32,14 @@ func SetValues(cfg *action.Configuration, releaseName string) (map[string]interf
 	return client.Run(releaseName)
 }
 
-func UpgradeValues(cfg *action.Configuration, chartDir, releaseName string, inputValues *os.File) (*release.Release, error) {
+func UpgradeValues(cfg *action.Configuration, chartDir, chartName, releaseName string, inputValues *os.File) (*release.Release, error) {
 	u := action.NewUpgrade(cfg)
 	u.ReuseValues = true
 
 	// Needs the chartPath we just Merged values from ..
 
 	// Check chart dependencies to make sure all are present in /charts
-	chartDir = filepath.Join(chartDir, ChartName)
+	chartDir = filepath.Join(chartDir, chartName)
 	ch, err := loader.Load(chartDir)
 	if err != nil {
 		return nil, err
@@ -65,11 +66,11 @@ func UpgradeValues(cfg *action.Configuration, chartDir, releaseName string, inpu
 	return u.Run(releaseName, ch, values)
 }
 
-func MergeValuesFile(cfg *action.Configuration, settings *cli.EnvSettings, chartDir, targetVersion, releaseName string) (*os.File, error) {
+func MergeValuesFile(cfg *action.Configuration, settings *cli.EnvSettings, chartDir, targetVersion, chartName, releaseName string) (*os.File, error) {
 	// Create temp file with merged default values.yaml (with comments) and helm modified values
 	// If there were changes, upgrade Helm release with the new overridden settings
 
-	targetFilename := filepath.Join(chartDir, ChartName, "values.yaml")
+	targetFilename := filepath.Join(chartDir, chartName, "values.yaml")
 
 	// TODO Following does not belong here.. move to some pkg
 

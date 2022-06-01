@@ -108,19 +108,24 @@ func (c *options) Run() error {
 	// TODO We could do this in Validate also..
 
 	// TODO Implement ChartVersion
-	targetVersion, err := helmutil.ChartVersion(c.cfg, c.releaseName)
+	chartInfo, err := helmutil.ChartVersion(c.cfg, c.releaseName)
 	if err != nil {
 		return err
 	}
 
 	// Verify if we have local copy of the values.yaml
 	// 	if not, fetch it
-	chartDir, err := helmutil.DownloadChartRelease(targetVersion)
+	chartDir, err := helmutil.DownloadChartRelease(chartInfo.Metadata.Name, chartInfo.Metadata.Version)
 	if err != nil {
 		return err
 	}
 
-	outputFile, err := helmutil.MergeValuesFile(c.cfg, c.settings, chartDir, targetVersion, c.releaseName)
+	chatExtractDir, err := helmutil.ExtractChartRelease(chartDir, chartInfo.Metadata.Version)
+	if err != nil {
+		return err
+	}
+
+	outputFile, err := helmutil.MergeValuesFile(c.cfg, c.settings, chatExtractDir, chartInfo.Metadata.Version, chartInfo.Metadata.Name, c.releaseName)
 	if err != nil {
 		return err
 	}
@@ -138,7 +143,7 @@ func (c *options) Run() error {
 		return err
 	}
 
-	_, err = helmutil.UpgradeValues(c.cfg, chartDir, c.releaseName, file)
+	_, err = helmutil.UpgradeValues(c.cfg, chatExtractDir, chartInfo.Metadata.Name, c.releaseName, file)
 	return err
 
 	// TODO Should we only add values that were modified? In other words, opposite of merge?
