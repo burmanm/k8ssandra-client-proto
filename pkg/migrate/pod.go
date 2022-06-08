@@ -130,7 +130,6 @@ func (n *NodeMigrator) getNodeInfo(cassConfig map[string]interface{}) error {
 		return err
 	}
 
-	// TODO Unmarshal this one..
 	b := configMap.BinaryData["clusterInfo"]
 
 	clusterConfigMap := ClusterConfigMap{}
@@ -154,7 +153,6 @@ func (n *NodeMigrator) getNodeInfo(cassConfig map[string]interface{}) error {
 	n.ServerVersion = clusterConfigMap.ServerVersion
 	n.Cluster = clusterConfigMap.Cluster
 
-	// TODO Verify kubenode
 	kubeNode, err := n.getLocalKubeNode(cassConfig)
 	if err != nil {
 		return err
@@ -165,20 +163,19 @@ func (n *NodeMigrator) getNodeInfo(cassConfig map[string]interface{}) error {
 }
 
 func (n *NodeMigrator) getLocalKubeNode(cassConfig map[string]interface{}) (string, error) {
-	// TODO Use client to get all the nodes and compare the IP address
 	nodes := &corev1.NodeList{}
 	if err := n.Client.List(context.TODO(), nodes); err != nil {
 		return "", err
 	}
 
 	// TODO What about IPv6?
-
+	// TODO Move the IP parsing to a new function so that isSeed() can use this code
 	targetIP := ""
 
 	if addr, found := cassConfig["listen_address"]; found {
 		ipAddr := addr.(string)
 		if ipAddr != "" && ipAddr != "0.0.0.0" {
-			// TODO Should not be loopback either
+			// TODO Should not accept loopback either
 			targetIP = ipAddr
 		}
 	}
@@ -255,7 +252,7 @@ func (n *NodeMigrator) getAllPodsServiceName() string {
 }
 
 func (n *NodeMigrator) isSeed() bool {
-	// TODO Parse the seed list earlier to catch this
+	// TODO Compare to the seedlist and check if this node is there. getLocalKubeNode has IP parsing code that can be reused
 	return true
 }
 
@@ -368,7 +365,7 @@ func (n *NodeMigrator) podAffinity() *corev1.Affinity {
 
 func (n *NodeMigrator) StartPod() error {
 	// TODO Could we instead of host networking also use nodeReplace to replace all the existing nodes with the data we already have? Thus moving to Kubernetes
-	// networking?
+	// networking? Perhaps investigate in CNI networking to see if we could have node visible in two networks
 
 	// Create ManagementClient
 	mgmtClient, err := NewManagementClient(context.TODO(), n.Client)
@@ -671,6 +668,7 @@ func (n *NodeMigrator) buildContainers() ([]corev1.Container, error) {
 
 	cassContainer.Lifecycle = &corev1.Lifecycle{}
 
+	// TODO Add this prestop back
 	// This is drain.. perhaps our reconcile once cass-operator is up will add this? We don't have DC spec created yet
 	// if cassContainer.Lifecycle.PreStop == nil {
 	// 	action, err := httphelper.GetMgmtApiWgetPostAction(dc, httphelper.WgetNodeDrainEndpoint, "")

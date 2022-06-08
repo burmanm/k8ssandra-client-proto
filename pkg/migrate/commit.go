@@ -135,7 +135,7 @@ func (c *MigrateFinisher) createCassandraDatacenter() error {
 	// TODO A placeholder in the dev machine
 	fsGroup := int64(1001)
 
-	// TODO Move to another function
+	// TODO Move the configFileGetting to reusable function
 	configFilesMap := &corev1.ConfigMap{}
 	configFilesMapKey := types.NamespacedName{Name: getConfigMapName(c.clusterConfigMap.Datacenter, "cass-config"), Namespace: c.namespace}
 	if err := c.Client.Get(context.TODO(), configFilesMapKey, configFilesMap); err != nil {
@@ -164,6 +164,7 @@ func (c *MigrateFinisher) createCassandraDatacenter() error {
 		},
 		Spec: cassdcapi.CassandraDatacenterSpec{
 			// TODO There is a cass-operator bug, it creates a label with non-valid characters (such as "Test Cluster")
+			// being fixed in the PR #339
 			ClusterName:   c.clusterConfigMap.Cluster,
 			ServerType:    c.clusterConfigMap.ServerType,
 			ServerVersion: c.clusterConfigMap.ServerVersion,

@@ -43,8 +43,6 @@ type ClusterMigrator struct {
 	NodetoolPath  string
 	CassandraHome string
 
-	// TODO Merge ClusterMigrator and NodeMigrator?
-
 	Cluster    string
 	Datacenter string
 	Rack       string
@@ -77,7 +75,7 @@ func (c *ClusterMigrator) InitCluster(p *pterm.SpinnerPrinter) error {
 	// 	return err
 	// }
 
-	// TODO Replace with BubbleTea
+	// TODO Replace with something prettier? Such as BubbleTea?
 
 	p.UpdateText("Fetching Cassandra cluster details")
 	err := c.CreateClusterConfigMap()
@@ -114,11 +112,8 @@ func (c *ClusterMigrator) InitCluster(p *pterm.SpinnerPrinter) error {
 	pterm.Success.Println("Created seed services")
 
 	pterm.Info.Println("Initialized and parsed current Cassandra configuration. You may now review configuration before proceeding with node migration")
-	// pterm.Info.Println("You can now import nodes to the Kubernetes")
 
-	// TODO After nodeMigrations:
-
-	// Create CassandraDatacenter with the known data + calculate how many nodes as size
+	// TODO Create tools to review the configuration ConfigMap
 
 	return nil
 }
@@ -157,12 +152,6 @@ func (c *ClusterMigrator) getSeeds() ([]string, error) {
 }
 
 func (c *ClusterMigrator) CreateSeedServices() error {
-	// Get the existing seeds service, if it exists and its endpoints
-	// Get the seeds from the current node and apply any new ones to the service
-
-	// Do we need to create additional seeds as well as seeds service? With the first one being updated
-	// as the correct ones are matched by seed labels?
-
 	additionalSeedService := &corev1.Service{}
 	additionalSeedsKey := types.NamespacedName{Name: c.additionalSeedServiceName(), Namespace: c.Namespace}
 	err := c.Client.Get(context.TODO(), additionalSeedsKey, additionalSeedService)
@@ -196,16 +185,13 @@ func (c *ClusterMigrator) CreateSeedServices() error {
 		return err
 	}
 
-	// TODO Verify endpoints is updated with all the possible seeds
+	// TODO Verify endpoints is updated with all the possible seeds (if some nodes have different seeds catalog) ?
 	if len(seeds) > 0 {
 		_, err := c.endpointsForAdditionalSeeds(seeds)
 		if err != nil {
 			return err
 		}
 	}
-
-	// TODO The existing installation should have seeds in the memory / in the cassandra.yaml
-	// We need to update the config to use our seed provider
 
 	return nil
 }
@@ -437,18 +423,6 @@ func (c *ClusterMigrator) endpointsForAdditionalSeeds(seeds []string) (*corev1.E
 
 		return &endpoints, nil
 	}
-
-	// TODO Add the missing seed (the current host perhaps) to the endpoints
-	// AddrBlock:
-	// for _, addr := range endpoints.Subsets[0].Addresses {
-	// 	for _, seed := range seeds {
-	// 		if addr.IP == seed {
-	// 			continue AddrBlock
-
-	// 		}
-	// 	}
-	// 	endpoints.Subsets[0].Addresses = append(endpoints.Subsets[0].Addresses, addr.IP)
-	// }
 
 	return endpoints, nil
 }

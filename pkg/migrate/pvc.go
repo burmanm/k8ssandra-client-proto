@@ -39,7 +39,7 @@ type NodeMigrator struct {
 }
 
 func (n *NodeMigrator) parseDataPath(dataDir string) string {
-	// TODO Parse from configuration directory
+	// TODO Parse from configuration
 	dataDirName := dataDir[7:]
 	if dataDirName == "config" {
 		dataDirName = "conf"
@@ -81,7 +81,7 @@ func (n *NodeMigrator) createPVC(dataDirectory string) *corev1.PersistentVolumeC
 				"volume.beta.kubernetes.io/storage-provisioner": "rancher.io/local-path",
 				"volume.kubernetes.io/selected-node":            n.KubeNode,
 			},
-			// TODO Do we need labels to indicate what created this?
+			// TODO Do we need labels to indicate what created this? Would be nice to match it with the CassandraDatacenter
 		},
 		Spec: corev1.PersistentVolumeClaimSpec{
 			AccessModes: []corev1.PersistentVolumeAccessMode{
@@ -113,7 +113,7 @@ func (n *NodeMigrator) createPV(dataDirectory, dataPath string) *corev1.Persiste
 			Annotations: map[string]string{
 				"pv.kubernetes.io/provisioned-by": "rancher.io/local-path",
 			},
-			// TODO Do we need labels to indicate what created this?
+			// TODO Do we need labels to indicate what created this? Would be nice to match it with the CassandraDatacenter
 		},
 		Spec: corev1.PersistentVolumeSpec{
 			AccessModes: []corev1.PersistentVolumeAccessMode{
@@ -154,71 +154,9 @@ func (n *NodeMigrator) createPV(dataDirectory, dataPath string) *corev1.Persiste
 }
 
 func (n *NodeMigrator) getPVName(dataDirectory string) string {
-	// TODO Fix this..
 	return fmt.Sprintf("pvc-%s", n.getPVCName(dataDirectory))
 }
 
 func (n *NodeMigrator) getPVCName(dataDirectory string) string {
 	return fmt.Sprintf("%s-%s-%s-%s-sts-%s", dataDirectory, cassdcapi.CleanupForKubernetes(n.Cluster), n.Datacenter, n.Rack, n.Ordinal)
 }
-
-/*
-apiVersion: v1
-kind: PersistentVolumeClaim
-metadata:
-  annotations:
-    volume.beta.kubernetes.io/storage-provisioner: rancher.io/local-path
-    volume.kubernetes.io/selected-node: ${NODE_NAME}
-  finalizers:
-  - kubernetes.io/pvc-protection
-  labels:
-    app.kubernetes.io/instance: cassandra-${CLUSTER_NAME}
-    app.kubernetes.io/managed-by: cass-operator
-    app.kubernetes.io/name: cassandra
-    app.kubernetes.io/version: 4.0.1
-    cassandra.datastax.com/cluster: ${CLUSTER_NAME}
-    cassandra.datastax.com/datacenter: ${DC_NAME}
-    cassandra.datastax.com/rack: ${RACK_NAME}
-  name: ${PVC_NAME}
-  namespace: cass-operator
-spec:
-  accessModes:
-  - ReadWriteOnce
-  resources:
-    requests:
-      storage: 1Gi
-  storageClassName: local-path
-  volumeMode: Filesystem
-  volumeName: ${PV_NAME}
-
-*/
-
-/*
-apiVersion: v1
-kind: PersistentVolume
-metadata:
-  annotations:
-    pv.kubernetes.io/provisioned-by: rancher.io/local-path
-  finalizers:
-  - kubernetes.io/pv-protection
-  name: ${PV_NAME}
-spec:
-  accessModes:
-  - ReadWriteOnce
-  capacity:
-    storage: 5Gi
-  hostPath:
-    path: ${DATA_PATH}
-    type: DirectoryOrCreate
-  nodeAffinity:
-    required:
-      nodeSelectorTerms:
-      - matchExpressions:
-        - key: kubernetes.io/hostname
-          operator: In
-          values:
-          - ${KUBE_NODE}
-  persistentVolumeReclaimPolicy: Retain
-  storageClassName: local-path
-  volumeMode: Filesystem
-*/
