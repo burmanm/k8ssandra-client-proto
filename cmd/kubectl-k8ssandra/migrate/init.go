@@ -166,7 +166,7 @@ func (c *options) Run() error {
 		return err
 	}
 
-	downloadPath, err := helmutil.DownloadChartRelease("cass-operator", "0.35.0")
+	downloadPath, err := helmutil.DownloadChartRelease("cass-operator", "0.37.0")
 	if err != nil {
 		pterm.Error.Printf("Failed to download cass-operator: %v", err)
 		return err
@@ -205,29 +205,9 @@ func (c *options) Run() error {
 		return err
 	}
 
-	/*
-		n, err := migrate.NewNodeMigrator(c.namespace, c.cassandraHome)
-		if err != nil {
-			return err
-		}
+	// TODO We need authentication support for nodetool operations
+	// TODO We need to support node replacement while the process of migration is going on. We could just allow manual
+	// 	 	edit of the ConfigMaps in the cluster as a simple way..
 
-		if c.nodetoolPath != "" {
-			n.NodetoolPath = c.nodetoolPath
-		}
-
-		err = n.MigrateNode(spinnerLiveText)
-		if err != nil {
-			pterm.Error.Printf("Failed to migrate local Cassandra node to Kubernetes: %v", err)
-			return err
-		}
-
-		spinnerLiveText.Success("Cassandra node has been successfully migrated to Kubernetes")
-
-		err = migrator.FinishInstallation(spinnerLiveText)
-		if err != nil {
-			pterm.Error.Printf("Failed to finish the k8ssandra installation: %v", err)
-			return err
-		}
-	*/
 	return nil
 }

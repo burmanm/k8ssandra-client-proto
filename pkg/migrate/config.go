@@ -196,6 +196,7 @@ func (c *ClusterMigrator) storeConfigFiles(configFilesMap *corev1.ConfigMap, cas
 	// These keys are not used in the Kubernetes installation
 	delete(cassYaml, "seed_provider")
 	delete(cassYaml, "listen_address")
+	delete(cassYaml, "listen_interface")
 
 	out, err := yaml.Marshal(cassYaml)
 	if err != nil {

@@ -152,6 +152,7 @@ func (c *ClusterMigrator) getSeeds() ([]string, error) {
 }
 
 func (c *ClusterMigrator) CreateSeedServices() error {
+	// TODO Additional seeds service list must be cleaned up after the migration has completed
 	additionalSeedService := &corev1.Service{}
 	additionalSeedsKey := types.NamespacedName{Name: c.additionalSeedServiceName(), Namespace: c.Namespace}
 	err := c.Client.Get(context.TODO(), additionalSeedsKey, additionalSeedService)

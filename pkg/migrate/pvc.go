@@ -50,6 +50,7 @@ func (n *NodeMigrator) parseDataPath(dataDir string) string {
 func (n *NodeMigrator) createVolumeMounts() error {
 	// dataDir := n.parseDataDirectory()
 
+	// TODO Multiple data directories? Add additionalVolumes here also (for CassDatacenter)
 	for _, dataDir := range []string{"server-logs", "server-config", "server-data"} {
 		pv := n.createPV(dataDir, n.parseDataPath(dataDir))
 		if err := n.Client.Create(context.TODO(), pv); err != nil {

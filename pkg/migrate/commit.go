@@ -107,7 +107,6 @@ func (c *MigrateFinisher) createCassandraDatacenter() error {
 	// migrated before we continue
 	datacenterSize, err := c.countOfMigratedPods()
 	if err != nil {
-		fmt.Printf("countOfMigratedPods failed: %v\n", err)
 		return err
 	}
 	// datacenterSize = len(c.clusterConfigMap.NodeInfos)
