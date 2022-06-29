@@ -9,6 +9,7 @@ import (
 	"github.com/burmanm/k8ssandra-client/cmd/kubectl-k8ssandra/migrate"
 	"github.com/burmanm/k8ssandra-client/cmd/kubectl-k8ssandra/nodetool"
 	"github.com/burmanm/k8ssandra-client/cmd/kubectl-k8ssandra/operate"
+	"github.com/burmanm/k8ssandra-client/cmd/kubectl-k8ssandra/users"
 
 	"github.com/spf13/cobra"
 	"k8s.io/cli-runtime/pkg/genericclioptions"
@@ -46,6 +47,7 @@ func NewCmd(streams genericclioptions.IOStreams) *cobra.Command {
 	cmd.AddCommand(operate.NewStopCmd(streams))
 	cmd.AddCommand(list.NewCmd(streams))
 	cmd.AddCommand(migrate.NewCmd(streams))
+	cmd.AddCommand(users.NewCmd(streams))
 
 	// cmd.Flags().BoolVar(&o.listNamespaces, "list", o.listNamespaces, "if true, print the list of all namespaces in the current KUBECONFIG")
 	o.configFlags.AddFlags(cmd.Flags())
