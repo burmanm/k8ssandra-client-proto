@@ -74,6 +74,9 @@ func (n *NodeMigrator) MigrateNode(p *pterm.SpinnerPrinter) error {
 
 	// Create the pod
 	p.UpdateText("Creating pod that runs Cassandra in Kubernetes")
+	// TODO This should be modified in the cass-operator to make that function in two stages
+	//		to allow initialization from a []byte also. This is required to be initialized if we
+	//		wish to use advanced image configuration in this project
 	images.ParseImageConfig("/home/michael/projects/git/datastax/cass-operator/config/manager/image_config.yaml")
 	if err := n.CreatePod(); err != nil {
 		return err

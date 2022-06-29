@@ -463,16 +463,29 @@ func (c *ClusterMigrator) retrieveStatusFromNodetool() ([]NodetoolNodeInfo, erro
 
 	nodeTexts := regexp.MustCompile(`(?m)^.*(([0-9a-fA-F]+-){4}([0-9a-fA-F]+)).*$`).FindAllString(output, -1)
 	nodeInfo := []NodetoolNodeInfo{}
-	ordinal := 0
+
+	// Ordinal must be per rack calculation
+	ordinals := make(map[string]int)
+
+	// ordinal := 0
 	for _, nodeText := range nodeTexts {
 		comps := regexp.MustCompile(`[[:space:]]+`).Split(strings.TrimSpace(nodeText), -1)
+		rack := comps[len(comps)-1]
+		ordinal, found := ordinals[rack]
+		if !found {
+			ordinal = 0
+		} else {
+			ordinal++
+		}
+		ordinals[rack] = ordinal
+
 		nodeInfo = append(nodeInfo,
 			NodetoolNodeInfo{
 				Status:  getFullName(string(comps[0][0])),
 				State:   getFullName(string(comps[0][1])),
 				Address: comps[1],
 				HostId:  comps[len(comps)-2],
-				Rack:    comps[len(comps)-1],
+				Rack:    rack,
 				Ordinal: strconv.Itoa(ordinal),
 			})
 		ordinal++
