@@ -2,7 +2,7 @@ package helmutil
 
 import (
 	"io"
-	"io/ioutil"
+	"os"
 	"path/filepath"
 	"strings"
 
@@ -74,7 +74,7 @@ func DownloadChartRelease(chartName, targetVersion string) (string, error) {
 	}
 
 	// Download to filesystem for extraction purposes
-	dir, err := ioutil.TempDir("", "helmutil-")
+	dir, err := os.MkdirTemp("", "helmutil-")
 	if err != nil {
 		return "", err
 	}

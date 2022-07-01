@@ -91,7 +91,7 @@ func MergeValuesFile(cfg *action.Configuration, settings *cli.EnvSettings, chart
 		return nil, err
 	}
 
-	outputFile, err := ioutil.TempFile(cacheDir, "*.yaml")
+	outputFile, err := os.CreateTemp(cacheDir, "*.yaml")
 	if err != nil {
 		return nil, err
 	}

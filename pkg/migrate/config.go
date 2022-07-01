@@ -100,7 +100,7 @@ func (c *ClusterMigrator) getOrCreateConfigMap() (*corev1.ConfigMap, error) {
 
 func (p *ConfigParser) parseJVMOptions() error {
 	// Parse through all $CONF_DIRECTORY/jvm*-server.options and write them to a ConfigMap
-	filepath.WalkDir(p.getConfigDir(), func(path string, d fs.DirEntry, err error) error {
+	return filepath.WalkDir(p.getConfigDir(), func(path string, d fs.DirEntry, err error) error {
 		if d.IsDir() {
 			// We're not processing subdirs
 			return nil
@@ -134,8 +134,6 @@ func (p *ConfigParser) parseJVMOptions() error {
 		}
 		return nil
 	})
-
-	return nil
 }
 
 func (p *ConfigParser) getJvmOptionsKey(jdkVersion string) string {
