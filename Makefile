@@ -42,8 +42,12 @@ fmt: ## Run go fmt against code.
 vet: ## Run go vet against code.
 	go vet ./...
 
+.PHONY: test
+test: fmt vet
+	go test -v ./...
+
 .PHONY: build
-build: fmt vet ## Build kubectl-k8ssandra
+build: test ## Build kubectl-k8ssandra
 	go build -o kubectl-k8ssandra cmd/kubectl-k8ssandra/main.go
 
 .PHONY: docker-build
