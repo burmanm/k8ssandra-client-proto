@@ -24,13 +24,23 @@ func ReadTargetPath(path string) (map[string]string, error) {
 	return readTargetFile(path)
 }
 
+// readTargetSecretMount is processing the old standard set by cass-operator
+// this method can only parse a single username/password pair
 func readTargetSecretMount(path string) (map[string]string, error) {
-	users := make(map[string]string)
+	var username, password string
+
 	err := filepath.WalkDir(path, func(path string, d fs.DirEntry, err error) error {
+		if err != nil {
+			// Couldn't access the file for some reason
+			return err
+		}
+
 		if d.IsDir() {
-			// We're not processing subdirs
+			// This will be walked later
 			return nil
 		}
+
+		// We should have two keys here: username and password and use that information..
 		f, err := os.Open(path)
 		if err != nil {
 			return err
@@ -39,12 +49,22 @@ func readTargetSecretMount(path string) (map[string]string, error) {
 		defer f.Close()
 
 		fileContents, err := io.ReadAll(f)
-		users[d.Name()] = string(fileContents)
+		if err != nil {
+			return err
+		}
+		data := string(fileContents)
+
+		switch d.Name() {
+		case "password":
+			password = data
+		case "username":
+			username = data
+		}
 
 		return nil
 	})
 
-	return users, err
+	return map[string]string{username: password}, err
 }
 
 func readTargetFile(path string) (map[string]string, error) {
@@ -61,8 +81,7 @@ func readTargetFile(path string) (map[string]string, error) {
 	scanner := bufio.NewScanner(f)
 	for scanner.Scan() {
 		line := scanner.Text()
-		// TODO This isn't correct way, we need to let users have "=" on the password also
-		userInfo := strings.Split(line, "=")
+		userInfo := strings.SplitN(line, "=", 2)
 		if len(userInfo) > 1 {
 			users[userInfo[0]] = userInfo[1]
 		}

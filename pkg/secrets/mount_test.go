@@ -22,14 +22,14 @@ func TestVaultMounted(t *testing.T) {
 		os.RemoveAll(tmpDir)
 	}()
 
-	_, err = tmpFile.WriteString("newuser=password")
+	_, err = tmpFile.WriteString("newuser=password====")
 	require.NoError(err)
 
 	users, err := readTargetFile(tmpFile.Name())
 	require.NoError(err)
 	require.Equal(1, len(users))
 	require.Contains(users, "newuser")
-	require.Equal("password", users["newuser"])
+	require.Equal("password====", users["newuser"])
 }
 
 func TestSecretMounted(t *testing.T) {
@@ -38,22 +38,22 @@ func TestSecretMounted(t *testing.T) {
 	tmpDir, err := os.MkdirTemp("", "secret-")
 	require.NoError(err)
 
-	tmpFile, err := os.CreateTemp(tmpDir, "user")
+	username := "superuser"
+	password := "superpassword"
+
+	err = os.WriteFile(filepath.Join(tmpDir, "username"), []byte(username), 0644)
+	require.NoError(err)
+
+	err = os.WriteFile(filepath.Join(tmpDir, "password"), []byte(password), 0644)
 	require.NoError(err)
 
 	defer func() {
-		tmpFile.Close()
 		os.RemoveAll(tmpDir)
 	}()
-
-	_, err = tmpFile.WriteString("password")
-	require.NoError(err)
-
-	userName := filepath.Base(tmpFile.Name())
 
 	users, err := readTargetSecretMount(tmpDir)
 	require.NoError(err)
 	require.Equal(1, len(users))
-	require.Contains(users, userName)
-	require.Equal("password", users[userName])
+	require.Contains(users, username)
+	require.Equal(password, users[username])
 }
