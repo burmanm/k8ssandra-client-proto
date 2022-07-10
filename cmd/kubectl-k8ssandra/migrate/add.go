@@ -1,7 +1,9 @@
 package migrate
 
 import (
+	"context"
 	"fmt"
+	"sync"
 
 	"github.com/burmanm/k8ssandra-client/pkg/cassdcutil"
 	"github.com/burmanm/k8ssandra-client/pkg/migrate"
@@ -96,9 +98,9 @@ func (c *addOptions) Validate() error {
 
 // Run removes the finalizers for a release X in the given namespace
 func (c *addOptions) Run() error {
-	spinnerLiveText, _ := pterm.DefaultSpinner.Start("Gathering information for node migration...")
+	p, _ := pterm.DefaultSpinner.Start("Gathering information for node migration...")
 
-	spinnerLiveText.UpdateText("Creating Kubernetes client to namespace " + c.namespace)
+	p.UpdateText("Creating Kubernetes client to namespace " + c.namespace)
 
 	client, err := cassdcutil.GetClientInNamespace(c.namespace)
 	if err != nil {
@@ -107,6 +109,26 @@ func (c *addOptions) Run() error {
 	}
 
 	pterm.Success.Println("Connected to Kubernetes node")
+
+	lock, err := migrate.NewResourceLock(c.namespace)
+	if err != nil {
+		pterm.Error.Printf("Failed to create resource lock: %v", err)
+		return err
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	wg := sync.WaitGroup{}
+	wg.Add(1)
+
+	p.UpdateText("Waiting for migrator lock")
+
+	// Gain leader election and then proceed
+	go migrate.RunLeaderElection(ctx, wg, lock)
+	wg.Wait()
+
+	pterm.Success.Println("Acquired node migrator lock")
 
 	n := migrate.NewNodeMigrator(client, c.namespace, c.cassandraHome)
 	if err != nil {
@@ -117,13 +139,13 @@ func (c *addOptions) Run() error {
 		n.NodetoolPath = c.nodetoolPath
 	}
 
-	err = n.MigrateNode(spinnerLiveText)
+	err = n.MigrateNode(p)
 	if err != nil {
 		pterm.Error.Printf("Failed to migrate local Cassandra node to Kubernetes: %v", err)
 		return err
 	}
 
-	spinnerLiveText.Success("Cassandra node has been successfully migrated to Kubernetes")
+	p.Success("Cassandra node has been successfully migrated to Kubernetes")
 
 	return nil
 }
