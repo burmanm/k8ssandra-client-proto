@@ -16,6 +16,7 @@ import (
 	"gopkg.in/yaml.v3"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
+	// coordinationv1 "k8s.io/api/coordination/v1"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
@@ -39,15 +40,17 @@ func NewNodeMigrator(cli client.Client, namespace, cassandraHome string) *NodeMi
 	}
 }
 
-func (n *NodeMigrator) MigrateNode(p *pterm.SpinnerPrinter) error {
+func (n *NodeMigrator) MigrateNode(p *pterm.SpinnerPrinter, configDir string) error {
 	n.p = p
 	// TODO Use the ButterTea or something for prettier output
 	p.UpdateText("Getting Cassandra node information")
 
-	cfgParser := NewParser(n.CassandraHome)
+	cfgParser := NewParser(configDir)
 	if err := cfgParser.ParseConfigs(); err != nil {
 		return err
 	}
+
+	n.configs = cfgParser
 
 	// Fetch current node information for cluster+datacenter+rack+hostUUID
 	// Fetch the clusterConfig for ordinal selection
@@ -77,7 +80,7 @@ func (n *NodeMigrator) MigrateNode(p *pterm.SpinnerPrinter) error {
 	// TODO This should be modified in the cass-operator to make that function in two stages
 	//		to allow initialization from a []byte also. This is required to be initialized if we
 	//		wish to use advanced image configuration in this project
-	images.ParseImageConfig("/home/michael/projects/git/datastax/cass-operator/config/manager/image_config.yaml")
+	images.ParseImageConfig("/home/michael/image_config.yaml")
 	if err := n.CreatePod(); err != nil {
 		return err
 	}
@@ -280,7 +283,7 @@ func (n *NodeMigrator) CreatePod() error {
 	userId := int64(999)
 	userGroup := int64(999)
 	// TODO A placeholder in the dev machine
-	fsGroup := int64(1001)
+	fsGroup := int64(121)
 
 	pod := &corev1.Pod{
 		ObjectMeta: metav1.ObjectMeta{

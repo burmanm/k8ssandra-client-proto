@@ -18,7 +18,8 @@ import (
 )
 
 type ConfigParser struct {
-	cassandraHome string
+	configDir string
+	// cassandraHome string
 	cassandraYaml map[string]interface{}
 	jvmOptions    map[string]string
 }
@@ -46,16 +47,16 @@ func (p *ConfigParser) ParseConfigs() error {
 
 var serverOptionName = regexp.MustCompile("^jvm.*-server.options$")
 
-func NewParser(cassandraHome string) *ConfigParser {
+func NewParser(configDir string) *ConfigParser {
 	return &ConfigParser{
-		cassandraHome: cassandraHome,
+		configDir:     configDir,
 		jvmOptions:    make(map[string]string),
 		cassandraYaml: make(map[string]interface{}),
 	}
 }
 
 func (c *ClusterMigrator) ParseConfigs(p *pterm.SpinnerPrinter) error {
-	cfgParser := NewParser(c.CassandraHome)
+	cfgParser := NewParser(c.ConfigDir)
 	if err := cfgParser.ParseConfigs(); err != nil {
 		return err
 	}
@@ -141,6 +142,7 @@ func (p *ConfigParser) getJvmOptionsKey(jdkVersion string) string {
 }
 
 func (p *ConfigParser) parseCassandraYaml() error {
+	// TODO Parse dse.yaml also
 	// Parse the $CONF_DIRECTORY/cassandra.yaml
 	yamlPath := filepath.Join(p.getConfigDir(), "cassandra.yaml")
 	yamlFile, err := os.ReadFile(yamlPath)
@@ -216,5 +218,6 @@ func getConfigMapName(datacenter, configName string) string {
 
 func (p *ConfigParser) getConfigDir() string {
 	// TODO Give the possibility to override config path
-	return fmt.Sprintf("%s/conf", p.cassandraHome)
+	return p.configDir
+	// return fmt.Sprintf("%s/conf", p.cassandraHome)
 }

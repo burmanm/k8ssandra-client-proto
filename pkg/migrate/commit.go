@@ -132,7 +132,7 @@ func (c *MigrateFinisher) createCassandraDatacenter() error {
 	userId := int64(999)
 	userGroup := int64(999)
 	// TODO A placeholder in the dev machine
-	fsGroup := int64(1001)
+	fsGroup := int64(121)
 
 	// TODO Move the configFileGetting to reusable function
 	configFilesMap := &corev1.ConfigMap{}

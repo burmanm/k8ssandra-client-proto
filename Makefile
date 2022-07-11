@@ -48,7 +48,7 @@ test: fmt vet
 
 .PHONY: build
 build: test ## Build kubectl-k8ssandra
-	go build -o kubectl-k8ssandra cmd/kubectl-k8ssandra/main.go
+	CGO_ENABLED=0 go build -o kubectl-k8ssandra cmd/kubectl-k8ssandra/main.go
 
 .PHONY: docker-build
 docker-build: ## Build k8ssandra-client

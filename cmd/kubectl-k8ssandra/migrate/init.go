@@ -44,6 +44,7 @@ type options struct {
 	namespace     string
 	nodetoolPath  string
 	cassandraHome string
+	configDir     string
 
 	// Helm related
 	cfg      *action.Configuration
@@ -62,11 +63,11 @@ func NewInitCmd(streams genericclioptions.IOStreams) *cobra.Command {
 	o := newOptions(streams)
 
 	cmd := &cobra.Command{
-		Use:           "init [flags]",
-		Short:         "initialize importing Cassandra installation to Kubernetes",
-		Example:       fmt.Sprintf(importExample, "kubectl k8ssandra"),
-		SilenceUsage:  true,
-		SilenceErrors: true,
+		Use:     "init [flags]",
+		Short:   "initialize importing Cassandra installation to Kubernetes",
+		Example: fmt.Sprintf(importExample, "kubectl k8ssandra"),
+		// SilenceUsage:  true,
+		// SilenceErrors: true,
 		RunE: func(c *cobra.Command, args []string) error {
 			if err := o.Complete(c, args); err != nil {
 				return err
@@ -85,6 +86,7 @@ func NewInitCmd(streams genericclioptions.IOStreams) *cobra.Command {
 	fl := cmd.Flags()
 	fl.StringVarP(&o.nodetoolPath, "nodetool-path", "p", "", "path to nodetool executable directory")
 	fl.StringVarP(&o.cassandraHome, "cassandra-home", "c", "", "path to cassandra/DSE installation directory")
+	fl.StringVarP(&o.configDir, "config-dir", "f", "", "path to cassandra/DSE configuration directory")
 	o.configFlags.AddFlags(fl)
 	return cmd
 }
@@ -120,9 +122,12 @@ func (c *options) Complete(cmd *cobra.Command, args []string) error {
 
 // Validate ensures that all required arguments and flag values are provided
 func (c *options) Validate() error {
-	if c.cassandraHome == "" {
-		return fmt.Errorf("cassandra-home is required")
+	if c.configDir == "" {
+		return fmt.Errorf("config-dir is required")
 	}
+	// if c.cassandraHome == "" {
+	// 	return fmt.Errorf("cassandra-home is required")
+	// }
 	return nil
 }
 
@@ -145,7 +150,7 @@ func (c *options) Run() error {
 		return err
 	}
 
-	migrator, err := migrate.NewClusterMigrator(client, c.namespace, c.cassandraHome)
+	migrator, err := migrate.NewClusterMigrator(client, c.namespace, c.configDir)
 	if err != nil {
 		return err
 	}

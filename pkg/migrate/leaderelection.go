@@ -58,12 +58,12 @@ func NewResourceLock(namespace string) (resourcelock.Interface, error) {
 		})
 }
 
-func RunLeaderElection(ctx context.Context, wg sync.WaitGroup, lock resourcelock.Interface) {
+func RunLeaderElection(ctx context.Context, wg *sync.WaitGroup, lock resourcelock.Interface) {
 	leaderelection.RunOrDie(ctx, leaderelection.LeaderElectionConfig{
 		Lock:            lock,
 		ReleaseOnCancel: true,
-		LeaseDuration:   30 * time.Second,
-		RenewDeadline:   10 * time.Second,
+		LeaseDuration:   10 * time.Second,
+		RenewDeadline:   5 * time.Second,
 		RetryPeriod:     2 * time.Second,
 		Callbacks: leaderelection.LeaderCallbacks{
 			OnStartedLeading: func(c context.Context) {

@@ -42,6 +42,7 @@ type ClusterMigrator struct {
 	client.Client
 	NodetoolPath  string
 	CassandraHome string
+	ConfigDir     string
 
 	Cluster    string
 	Datacenter string
@@ -60,12 +61,12 @@ type ClusterMigrator struct {
 	clusterConfigMap ClusterConfigMap
 }
 
-func NewClusterMigrator(client client.Client, namespace, cassandraHome string) (*ClusterMigrator, error) {
+func NewClusterMigrator(client client.Client, namespace, configDir string) (*ClusterMigrator, error) {
 	return &ClusterMigrator{
-		Client:        client,
-		Namespace:     namespace,
-		CassandraHome: cassandraHome,
-		seeds:         make([]string, 0),
+		Client:    client,
+		Namespace: namespace,
+		ConfigDir: configDir,
+		seeds:     make([]string, 0),
 	}, nil
 }
 
@@ -340,8 +341,7 @@ func (c *ClusterMigrator) getNodetoolPath() string {
 	return fmt.Sprintf("%s/bin", c.CassandraHome)
 }
 
-func execNodetool(nodetoolPath, command string) (string, error) {
-	nodetoolLocation := fmt.Sprintf("%s/nodetool", nodetoolPath)
+func execNodetool(nodetoolLocation, command string) (string, error) {
 	out, err := exec.Command(nodetoolLocation, command).Output()
 	if err != nil {
 		if ee, ok := err.(*exec.ExitError); ok {

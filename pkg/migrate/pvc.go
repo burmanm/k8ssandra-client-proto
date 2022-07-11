@@ -19,6 +19,8 @@ type NodeMigrator struct {
 	NodetoolPath  string
 	CassandraHome string
 
+	configs *ConfigParser
+
 	// Nodetool describecluster has this information (cluster name)
 	// Verify we use the same cleanupForKubernetesAPI like cass-operator would (exposed in the apis/v1beta1)
 	Cluster string
@@ -44,6 +46,15 @@ func (n *NodeMigrator) parseDataPath(dataDir string) string {
 	if dataDirName == "config" {
 		dataDirName = "conf"
 	}
+
+	// TODO Or hardcode for the demo?
+
+	// Should be parsed from data_file_directories [array]
+	if dirs, found := n.configs.cassandraYaml["data_file_directories"]; found {
+		dirs := dirs.([]interface{})
+		return dirs[0].(string)
+	}
+
 	return fmt.Sprintf("%s/%s", n.CassandraHome, dataDirName)
 }
 
@@ -51,7 +62,8 @@ func (n *NodeMigrator) createVolumeMounts() error {
 	// dataDir := n.parseDataDirectory()
 
 	// TODO Multiple data directories? Add additionalVolumes here also (for CassDatacenter)
-	for _, dataDir := range []string{"server-logs", "server-config", "server-data"} {
+	// for _, dataDir := range []string{"server-logs", "server-config", "server-data"} {
+	for _, dataDir := range []string{"server-data"} {
 		pv := n.createPV(dataDir, n.parseDataPath(dataDir))
 		if err := n.Client.Create(context.TODO(), pv); err != nil {
 			return err

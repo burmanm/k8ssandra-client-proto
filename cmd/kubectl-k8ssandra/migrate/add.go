@@ -30,6 +30,7 @@ type addOptions struct {
 	namespace     string
 	nodetoolPath  string
 	cassandraHome string
+	configDir     string
 }
 
 func newAddOptions(streams genericclioptions.IOStreams) *addOptions {
@@ -67,6 +68,7 @@ func NewAddCmd(streams genericclioptions.IOStreams) *cobra.Command {
 	fl := cmd.Flags()
 	fl.StringVarP(&o.nodetoolPath, "nodetool-path", "p", "", "path to nodetool executable directory")
 	fl.StringVarP(&o.cassandraHome, "cassandra-home", "c", "", "path to cassandra/DSE installation directory")
+	fl.StringVarP(&o.configDir, "config-dir", "f", "", "path to cassandra/DSE configuration directory")
 	o.configFlags.AddFlags(fl)
 	return cmd
 }
@@ -90,9 +92,9 @@ func (c *addOptions) Complete(cmd *cobra.Command, args []string) error {
 
 // Validate ensures that all required arguments and flag values are provided
 func (c *addOptions) Validate() error {
-	if c.cassandraHome == "" {
-		return errNoCassandraHome
-	}
+	// if c.cassandraHome == "" {
+	// 	return errNoCassandraHome
+	// }
 	return nil
 }
 
@@ -119,7 +121,7 @@ func (c *addOptions) Run() error {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	wg := sync.WaitGroup{}
+	wg := &sync.WaitGroup{}
 	wg.Add(1)
 
 	p.UpdateText("Waiting for migrator lock")
@@ -139,7 +141,7 @@ func (c *addOptions) Run() error {
 		n.NodetoolPath = c.nodetoolPath
 	}
 
-	err = n.MigrateNode(p)
+	err = n.MigrateNode(p, c.configDir)
 	if err != nil {
 		pterm.Error.Printf("Failed to migrate local Cassandra node to Kubernetes: %v", err)
 		return err
