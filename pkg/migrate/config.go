@@ -20,12 +20,19 @@ import (
 type ConfigParser struct {
 	configDir string
 	// cassandraHome string
+
+	yamls map[string]map[string]interface{}
+
 	cassandraYaml map[string]interface{}
 	jvmOptions    map[string]string
 }
 
+func (p *ConfigParser) Yamls() map[string]map[string]interface{} {
+	return p.yamls
+}
+
 func (p *ConfigParser) CassYaml() map[string]interface{} {
-	return p.cassandraYaml
+	return p.yamls["cassandra-yaml"]
 }
 
 func (p *ConfigParser) JvmOptions(jdkVersion string) string {
@@ -34,7 +41,11 @@ func (p *ConfigParser) JvmOptions(jdkVersion string) string {
 }
 
 func (p *ConfigParser) ParseConfigs() error {
-	if err := p.parseCassandraYaml(); err != nil {
+	if err := p.parseYaml("cassandra.yaml"); err != nil {
+		return err
+	}
+
+	if err := p.parseYaml("dse.yaml"); err != nil {
 		return err
 	}
 
@@ -49,9 +60,9 @@ var serverOptionName = regexp.MustCompile("^jvm.*-server.options$")
 
 func NewParser(configDir string) *ConfigParser {
 	return &ConfigParser{
-		configDir:     configDir,
-		jvmOptions:    make(map[string]string),
-		cassandraYaml: make(map[string]interface{}),
+		configDir:  configDir,
+		jvmOptions: make(map[string]string),
+		yamls:      make(map[string]map[string]interface{}),
 	}
 }
 
@@ -73,7 +84,7 @@ func (c *ClusterMigrator) ParseConfigs(p *pterm.SpinnerPrinter) error {
 	}
 
 	p.UpdateText("Storing configs to Kubernetes")
-	_, err = c.storeConfigFiles(confMap, cfgParser.CassYaml())
+	_, err = c.storeConfigFiles(confMap, cfgParser.Yamls())
 	if err != nil {
 		return err
 	}
@@ -141,10 +152,18 @@ func (p *ConfigParser) getJvmOptionsKey(jdkVersion string) string {
 	return strings.ReplaceAll(fmt.Sprintf("jvm%s-server.options", jdkVersion), ".", "-")
 }
 
-func (p *ConfigParser) parseCassandraYaml() error {
+func (p *ConfigParser) parseYaml(name string) error {
 	// TODO Parse dse.yaml also
 	// Parse the $CONF_DIRECTORY/cassandra.yaml
-	yamlPath := filepath.Join(p.getConfigDir(), "cassandra.yaml")
+	yamlPath := filepath.Join(p.getConfigDir(), name)
+
+	if _, err := os.Stat(yamlPath); err != nil {
+		if os.IsNotExist(err) {
+			return nil
+		}
+		return err
+	}
+
 	yamlFile, err := os.ReadFile(yamlPath)
 	if err != nil {
 		return err
@@ -157,30 +176,34 @@ func (p *ConfigParser) parseCassandraYaml() error {
 		return err
 	}
 
-	p.cassandraYaml = target
+	p.yamls[name] = target
 	return nil
 }
 
-func (c *ClusterMigrator) storeConfigFiles(configFilesMap *corev1.ConfigMap, cassYaml map[string]interface{}) (*corev1.ConfigMap, error) {
+func (c *ClusterMigrator) storeConfigFiles(configFilesMap *corev1.ConfigMap, yamls map[string]map[string]interface{}) (*corev1.ConfigMap, error) {
 	if configFilesMap.Data == nil {
 		configFilesMap.Data = make(map[string]string)
 	}
 
-	// Parse seeds
-	if seedProviders, ok := cassYaml["seed_provider"].([]interface{}); ok {
-		for _, seedProvider := range seedProviders {
-			if seedProv, ok := seedProvider.(map[string]interface{}); ok {
-				if params, found := seedProv["parameters"]; found {
-					if paramsSlice, ok := params.([]interface{}); ok {
-						for _, partSlice := range paramsSlice {
-							if castSlice, ok := partSlice.(map[string]interface{}); ok {
-								if seedList, found := castSlice["seeds"]; found {
-									seeds := strings.Split(seedList.(string), ",")
-									for _, seed := range seeds {
-										seedAddr := strings.Split(seed, ":")
-										if seedAddr[0] != "127.0.0.1" {
-											// Loopback isn't allowed endpoint value in Kubernetes
-											c.seeds = append(c.seeds, seedAddr[0])
+	for name, yamlConf := range yamls {
+		if name == "cassandra.yaml" {
+			// Parse seeds
+			if seedProviders, ok := yamlConf["seed_provider"].([]interface{}); ok {
+				for _, seedProvider := range seedProviders {
+					if seedProv, ok := seedProvider.(map[string]interface{}); ok {
+						if params, found := seedProv["parameters"]; found {
+							if paramsSlice, ok := params.([]interface{}); ok {
+								for _, partSlice := range paramsSlice {
+									if castSlice, ok := partSlice.(map[string]interface{}); ok {
+										if seedList, found := castSlice["seeds"]; found {
+											seeds := strings.Split(seedList.(string), ",")
+											for _, seed := range seeds {
+												seedAddr := strings.Split(seed, ":")
+												if seedAddr[0] != "127.0.0.1" {
+													// Loopback isn't allowed endpoint value in Kubernetes
+													c.seeds = append(c.seeds, seedAddr[0])
+												}
+											}
 										}
 									}
 								}
@@ -188,22 +211,23 @@ func (c *ClusterMigrator) storeConfigFiles(configFilesMap *corev1.ConfigMap, cas
 						}
 					}
 				}
+
 			}
+
+			// These keys are not used in the Kubernetes installation
+			delete(yamlConf, "seed_provider")
+			delete(yamlConf, "listen_address")
+			delete(yamlConf, "listen_interface")
+		}
+		out, err := yaml.Marshal(yamlConf)
+		if err != nil {
+			return nil, err
 		}
 
+		// cass-config-builder uses "cassandra-yaml" and "dse-yaml"
+		modifiedName := strings.ReplaceAll(name, ".", "-")
+		configFilesMap.Data[modifiedName] = string(out)
 	}
-
-	// These keys are not used in the Kubernetes installation
-	delete(cassYaml, "seed_provider")
-	delete(cassYaml, "listen_address")
-	delete(cassYaml, "listen_interface")
-
-	out, err := yaml.Marshal(cassYaml)
-	if err != nil {
-		return nil, err
-	}
-
-	configFilesMap.Data["cassandra-yaml"] = string(out)
 
 	if err := c.Client.Update(context.TODO(), configFilesMap); err != nil {
 		return nil, err
