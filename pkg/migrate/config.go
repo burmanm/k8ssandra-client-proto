@@ -23,8 +23,7 @@ type ConfigParser struct {
 
 	yamls map[string]map[string]interface{}
 
-	cassandraYaml map[string]interface{}
-	jvmOptions    map[string]string
+	jvmOptions map[string]string
 }
 
 func (p *ConfigParser) Yamls() map[string]map[string]interface{} {
@@ -113,6 +112,11 @@ func (c *ClusterMigrator) getOrCreateConfigMap() (*corev1.ConfigMap, error) {
 func (p *ConfigParser) parseJVMOptions() error {
 	// Parse through all $CONF_DIRECTORY/jvm*-server.options and write them to a ConfigMap
 	return filepath.WalkDir(p.getConfigDir(), func(path string, d fs.DirEntry, err error) error {
+		if err != nil {
+			// Couldn't access the file for some reason
+			return err
+		}
+
 		if d.IsDir() {
 			// We're not processing subdirs
 			return nil
@@ -153,8 +157,6 @@ func (p *ConfigParser) getJvmOptionsKey(jdkVersion string) string {
 }
 
 func (p *ConfigParser) parseYaml(name string) error {
-	// TODO Parse dse.yaml also
-	// Parse the $CONF_DIRECTORY/cassandra.yaml
 	yamlPath := filepath.Join(p.getConfigDir(), name)
 
 	if _, err := os.Stat(yamlPath); err != nil {
@@ -176,7 +178,8 @@ func (p *ConfigParser) parseYaml(name string) error {
 		return err
 	}
 
-	p.yamls[name] = target
+	modifiedName := strings.ReplaceAll(name, ".", "-")
+	p.yamls[modifiedName] = target
 	return nil
 }
 
@@ -186,7 +189,7 @@ func (c *ClusterMigrator) storeConfigFiles(configFilesMap *corev1.ConfigMap, yam
 	}
 
 	for name, yamlConf := range yamls {
-		if name == "cassandra.yaml" {
+		if name == "cassandra-yaml" {
 			// Parse seeds
 			if seedProviders, ok := yamlConf["seed_provider"].([]interface{}); ok {
 				for _, seedProvider := range seedProviders {
@@ -225,8 +228,7 @@ func (c *ClusterMigrator) storeConfigFiles(configFilesMap *corev1.ConfigMap, yam
 		}
 
 		// cass-config-builder uses "cassandra-yaml" and "dse-yaml"
-		modifiedName := strings.ReplaceAll(name, ".", "-")
-		configFilesMap.Data[modifiedName] = string(out)
+		configFilesMap.Data[name] = string(out)
 	}
 
 	if err := c.Client.Update(context.TODO(), configFilesMap); err != nil {

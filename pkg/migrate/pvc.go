@@ -3,6 +3,11 @@ package migrate
 import (
 	"context"
 	"fmt"
+	"io/fs"
+	"os"
+	"path/filepath"
+	"strings"
+	"syscall"
 	"time"
 
 	corev1 "k8s.io/api/core/v1"
@@ -40,36 +45,158 @@ type NodeMigrator struct {
 	p *pterm.SpinnerPrinter
 }
 
-func (n *NodeMigrator) parseDataPath(dataDir string) string {
-	// TODO Parse from configuration
-	dataDirName := dataDir[7:]
-	if dataDirName == "config" {
-		dataDirName = "conf"
+const (
+	ServerData = "server-data"
+	// Golang returns rights as bits, so we need to create our own mask..
+	// 3 bits per mode, user, group, world order (big-endian)
+	// So we want last 6 bits to be: 110 000
+	GroupReadAndWriteRights = uint32((1 << 5) | (1 << 6))
+)
+
+// TODO Set the correct rights before trying to migrate
+// 		Also, add a validation step before we start shutting down anything?
+
+/*
+	Parse all data directories and verify if they have a common root we could
+	mount instead of adding all of them as "additional volumes"
+
+	Parse all the _directory and _directories matching keys.
+	=> _directories is []string,
+		=> data_file_directories
+	=> _directory = string
+*/
+
+func parseDataPaths(cassandraYaml map[string]interface{}) ([]string, map[string]string, error) {
+	additionalDirectories := make(map[string]string)
+	dataDirectories := make([]string, 0)
+
+	for key, val := range cassandraYaml {
+		if strings.HasSuffix(key, "_directory") {
+			additionalDirectories[key] = val.(string)
+		} else if strings.HasSuffix(key, "_directories") {
+			dirs := val.([]interface{})
+			for _, dataDir := range dirs {
+				dataDirectories = append(dataDirectories, dataDir.(string))
+			}
+		}
 	}
 
-	// TODO Or hardcode for the demo?
+	return dataDirectories, additionalDirectories, nil
+}
 
-	// Should be parsed from data_file_directories [array]
-	if dirs, found := n.configs.cassandraYaml["data_file_directories"]; found {
-		dirs := dirs.([]interface{})
-		return dirs[0].(string)
+func GetFsGroup(path string) (uint32, error) {
+	currentGid := uint32(0)
+	err := filepath.WalkDir(path, func(path string, d fs.DirEntry, err error) error {
+		if err != nil {
+			// Couldn't access the file for some reason
+			return err
+		}
+
+		// Linux only (probably)
+		statT := syscall.Stat_t{}
+		err = syscall.Stat(path, &statT)
+		if err != nil {
+			return err
+		}
+		if currentGid == 0 {
+			currentGid = statT.Gid
+		}
+		if currentGid != statT.Gid {
+			return fmt.Errorf("found multiple groups in %s", path)
+		}
+
+		return nil
+	})
+
+	return currentGid, err
+}
+
+func (n *NodeMigrator) FixGroupRights() error {
+	dataDirs, additionalDirs, err := parseDataPaths(n.configs.CassYaml())
+	if err != nil {
+		return err
 	}
 
-	return fmt.Sprintf("%s/%s", n.CassandraHome, dataDirName)
+	for _, val := range dataDirs {
+		err = FixDirectoryRights(val)
+		if err != nil {
+			return err
+		}
+	}
+
+	for _, val := range additionalDirs {
+		err = FixDirectoryRights(val)
+		if err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+func FixDirectoryRights(path string) error {
+	return filepath.WalkDir(path, func(path string, d fs.DirEntry, err error) error {
+		if err != nil {
+			// Couldn't access the file for some reason
+			return err
+		}
+
+		fsInfo, err := os.Stat(path)
+		if err != nil {
+			return err
+		}
+
+		mode := fsInfo.Mode()
+		if uint32(mode.Perm())&GroupReadAndWriteRights != GroupReadAndWriteRights {
+			modifiedRights := uint32(fsInfo.Mode().Perm()) | GroupReadAndWriteRights
+			err = os.Chmod(path, fs.FileMode(modifiedRights))
+			if err != nil {
+				return err
+			}
+		}
+
+		return nil
+	})
 }
 
 func (n *NodeMigrator) createVolumeMounts() error {
-	// dataDir := n.parseDataDirectory()
+	dataDirs, additionalDirs, err := parseDataPaths(n.configs.CassYaml())
+	if err != nil {
+		return err
+	}
 
-	// TODO Multiple data directories? Add additionalVolumes here also (for CassDatacenter)
-	// for _, dataDir := range []string{"server-logs", "server-config", "server-data"} {
-	for _, dataDir := range []string{"server-data"} {
-		pv := n.createPV(dataDir, n.parseDataPath(dataDir))
+	// TODO Add to validation also
+	if len(dataDirs) < 1 {
+		return fmt.Errorf("no data_file_directories found")
+	}
+
+	// Create server-data first:
+	for i := 0; i < len(dataDirs); i++ {
+		mountName := ServerData
+		if i > 0 {
+			mountName = fmt.Sprintf("%s-%d", ServerData, i)
+		}
+
+		pv := n.createPV(mountName, dataDirs[0])
 		if err := n.Client.Create(context.TODO(), pv); err != nil {
 			return err
 		}
 
-		pvc := n.createPVC(dataDir)
+		pvc := n.createPVC(mountName)
+		if err := n.Client.Create(context.TODO(), pvc); err != nil {
+			return err
+		}
+
+	}
+
+	// Now mount additionalDataDirs:
+	for mountName, path := range additionalDirs {
+		pv := n.createPV(mountName, path)
+		if err := n.Client.Create(context.TODO(), pv); err != nil {
+			return err
+		}
+
+		pvc := n.createPVC(mountName)
 		if err := n.Client.Create(context.TODO(), pvc); err != nil {
 			return err
 		}
@@ -81,14 +208,14 @@ func (n *NodeMigrator) createVolumeMounts() error {
 	return nil
 }
 
-func (n *NodeMigrator) createPVC(dataDirectory string) *corev1.PersistentVolumeClaim {
+func (n *NodeMigrator) createPVC(mountName string) *corev1.PersistentVolumeClaim {
 	volumeMode := new(corev1.PersistentVolumeMode)
 	*volumeMode = corev1.PersistentVolumeFilesystem
 	storageClassName := "local-path"
 
 	return &corev1.PersistentVolumeClaim{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      n.getPVCName(dataDirectory),
+			Name:      n.getPVCName(mountName),
 			Namespace: n.Namespace,
 			Annotations: map[string]string{
 				"volume.beta.kubernetes.io/storage-provisioner": "rancher.io/local-path",
@@ -108,12 +235,12 @@ func (n *NodeMigrator) createPVC(dataDirectory string) *corev1.PersistentVolumeC
 			},
 			StorageClassName: &storageClassName,
 			VolumeMode:       volumeMode,
-			VolumeName:       n.getPVName(dataDirectory),
+			VolumeName:       n.getPVName(mountName),
 		},
 	}
 }
 
-func (n *NodeMigrator) createPV(dataDirectory, dataPath string) *corev1.PersistentVolume {
+func (n *NodeMigrator) createPV(mountName, path string) *corev1.PersistentVolume {
 	hostPathType := new(corev1.HostPathType)
 	*hostPathType = corev1.HostPathDirectory
 	volumeMode := new(corev1.PersistentVolumeMode)
@@ -121,7 +248,7 @@ func (n *NodeMigrator) createPV(dataDirectory, dataPath string) *corev1.Persiste
 
 	return &corev1.PersistentVolume{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      n.getPVName(dataDirectory),
+			Name:      n.getPVName(mountName),
 			Namespace: n.Namespace,
 			Annotations: map[string]string{
 				"pv.kubernetes.io/provisioned-by": "rancher.io/local-path",
@@ -140,7 +267,7 @@ func (n *NodeMigrator) createPV(dataDirectory, dataPath string) *corev1.Persiste
 			PersistentVolumeSource: corev1.PersistentVolumeSource{
 				HostPath: &corev1.HostPathVolumeSource{
 					Type: hostPathType,
-					Path: dataPath,
+					Path: path,
 				},
 			},
 			PersistentVolumeReclaimPolicy: corev1.PersistentVolumeReclaimRetain,
