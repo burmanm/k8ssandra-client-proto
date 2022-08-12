@@ -50,7 +50,7 @@ const (
 	// Golang returns rights as bits, so we need to create our own mask..
 	// 3 bits per mode, user, group, world order (big-endian)
 	// So we want last 6 bits to be: 110 000
-	GroupReadAndWriteRights = uint32((1 << 5) | (1 << 6))
+	GroupReadAndWriteRights = uint32((1 << 4) | (1 << 5))
 )
 
 // TODO Set the correct rights before trying to migrate
