@@ -28,6 +28,4 @@ func TestParseDataPaths(t *testing.T) {
 	// One data_file_directories path, one commitlog_directory path
 	require.Equal(1, len(additionalDirs))
 	require.Equal(1, len(dataDirs))
-
-	require.Fail("Puuh")
 }

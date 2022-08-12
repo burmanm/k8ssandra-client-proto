@@ -53,9 +53,6 @@ const (
 	GroupReadAndWriteRights = uint32((1 << 4) | (1 << 5))
 )
 
-// TODO Set the correct rights before trying to migrate
-// 		Also, add a validation step before we start shutting down anything?
-
 /*
 	Parse all data directories and verify if they have a common root we could
 	mount instead of adding all of them as "additional volumes"
@@ -82,6 +79,44 @@ func parseDataPaths(cassandraYaml map[string]interface{}) ([]string, map[string]
 	}
 
 	return dataDirectories, additionalDirectories, nil
+}
+
+func (n *NodeMigrator) ValidateMountTargets() error {
+	dataDirs, additionalDirs, err := parseDataPaths(n.configs.CassYaml())
+	if err != nil {
+		return err
+	}
+
+	if len(dataDirs) < 1 {
+		return fmt.Errorf("no data_file_directories found")
+	}
+
+	targetGid := uint32(0)
+	for _, dir := range dataDirs {
+		gid, err := GetFsGroup(dir)
+		if err != nil {
+			return err
+		}
+		if targetGid == 0 {
+			targetGid = gid
+		}
+		if gid != targetGid {
+			return fmt.Errorf("found multiple group ids in target directories")
+		}
+	}
+
+	for _, dir := range additionalDirs {
+		gid, err := GetFsGroup(dir)
+		if err != nil {
+			return err
+		}
+		if gid != targetGid {
+			return fmt.Errorf("found multiple group ids in target directories")
+		}
+
+	}
+
+	return nil
 }
 
 func GetFsGroup(path string) (uint32, error) {
@@ -168,6 +203,11 @@ func (n *NodeMigrator) createVolumeMounts() error {
 	// TODO Add to validation also
 	if len(dataDirs) < 1 {
 		return fmt.Errorf("no data_file_directories found")
+	}
+
+	err = n.FixGroupRights()
+	if err != nil {
+		return err
 	}
 
 	// Create server-data first:
