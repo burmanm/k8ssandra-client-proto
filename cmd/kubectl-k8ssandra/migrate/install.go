@@ -23,11 +23,8 @@ import (
 
 var (
 	installExample = `
-	# initialize Kubernetes for Cassandra migration
-	%[1]s import install [<args>]
-
-	# Use nodetool from outside $PATH
-	%[1]s import install --cassandra-home=$CASSANDRA_HOME
+	# install k8ssandra-operator management tools to the cluster
+	%[1]s install [<args>]
 
 	`
 	// errNotEnoughParameters = fmt.Errorf("not enough parameters to run nodetool")
@@ -60,7 +57,7 @@ func NewInstallCmd(streams genericclioptions.IOStreams) *cobra.Command {
 
 	cmd := &cobra.Command{
 		Use:     "install [flags]",
-		Short:   "initialize importing Cassandra installation to Kubernetes",
+		Short:   "install k8ssandra-operator management tools to the cluster",
 		Example: fmt.Sprintf(importExample, "kubectl k8ssandra"),
 		// SilenceUsage:  true,
 		// SilenceErrors: true,
@@ -94,9 +91,9 @@ func (c *installOptions) Complete(cmd *cobra.Command, args []string) error {
 	}
 
 	// Create new namespace for this usage
-	if c.namespace == "default" || c.namespace == "" {
-		c.namespace = releaseName
-	}
+	// if c.namespace == "default" || c.namespace == "" {
+	// 	c.namespace = releaseName
+	// }
 
 	actionConfig := new(action.Configuration)
 	settings := cli.New()
@@ -149,7 +146,7 @@ func (c *installOptions) Run() error {
 		return err
 	}
 
-	downloadPath, err := helmutil.DownloadChartRelease("k8ssandra-operator", "0.38.0")
+	downloadPath, err := helmutil.DownloadChartRelease("k8ssandra-operator", "")
 	if err != nil {
 		pterm.Error.Printf("Failed to download cass-operator: %v", err)
 		return err
