@@ -105,14 +105,14 @@ func (c *uninstallOptions) Run() error {
 	spinnerLiveText.UpdateText("Removing k8ssandra-operator")
 
 	if _, err := helmutil.Uninstall(c.cfg, "mc"); err != nil {
-		pterm.Fatal.Println("Failed to uninstall k8ssandra-operator")
+		pterm.Error.Println("Failed to uninstall k8ssandra-operator")
 		return err
 	}
 
 	pterm.Success.Println("k8ssandra-operator has been uninstalled")
 
 	if _, err := helmutil.Uninstall(c.cfg, "certs"); err != nil {
-		pterm.Fatal.Println("Failed to uninstall cert-manager")
+		pterm.Error.Println("Failed to uninstall cert-manager")
 		return err
 	}
 
