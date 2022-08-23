@@ -7,6 +7,7 @@ import (
 	"strconv"
 
 	"github.com/burmanm/k8ssandra-client/pkg/helmutil"
+	"github.com/pterm/pterm"
 	"github.com/spf13/cobra"
 	"helm.sh/helm/v3/pkg/action"
 	"helm.sh/helm/v3/pkg/cli"
@@ -116,9 +117,16 @@ type releaseElement struct {
 	ChartVersion     string `json:"chart_version"`
 	CassandraVersion string `json:"cass_version"`
 	Chart            string `json:"chart"`
+	AppVersion       string `json:"app_version"`
+	AppName          string `json:"app_name"`
 }
 
 func printReleases(releases []*release.Release) {
+
+	tableData := pterm.TableData{
+		{"Application", "Namespace", "Status", "Version", "Updated"},
+	}
+
 	// Initialize the array so no results returns an empty array instead of null
 	elements := make([]releaseElement, 0, len(releases))
 	for _, r := range releases {
@@ -131,14 +139,32 @@ func printReleases(releases []*release.Release) {
 			ChartVersion: r.Chart.Metadata.Version,
 			Chart:        r.Chart.Name(),
 			Updated:      r.Info.LastDeployed.Local().String(),
+			AppVersion:   r.Chart.AppVersion(),
 			// CassandraVersion: r.Chart.Values["cassandra"]["version"],
 		}
-
 		elements = append(elements, element)
+		for _, dep := range r.Chart.Metadata.Dependencies {
+			if dep.Name == "k8ssandra-common" {
+				continue
+			}
+			elements = append(elements, releaseElement{
+				Chart:        dep.Name,
+				ChartVersion: dep.Version,
+				Namespace:    element.Namespace,
+				Status:       element.Status,
+				Updated:      element.Updated,
+			})
+		}
 	}
 
-	// TODO Replace with nice table list - add headers first
 	for _, e := range elements {
-		fmt.Printf("%v\n", e)
+		tableData = append(tableData, []string{e.Chart, e.Namespace, e.Status, e.ChartVersion, e.Updated})
 	}
+
+	tp := pterm.DefaultTable.WithHasHeader().WithHeaderRowSeparator("-")
+	// .Render()
+
+	tp.WithData(tableData).Render()
+
+	pterm.Println() // Blank line
 }

@@ -55,7 +55,7 @@ func New(namespace string) (*Upgrader, error) {
 
 // Upgrade installs the missing CRDs or updates them if they exists already
 func (u *Upgrader) Upgrade(targetVersion string) error {
-	extractDir, err := helmutil.DownloadChartRelease(helmutil.RepoName, targetVersion)
+	extractDir, err := helmutil.DownloadChartRelease(helmutil.RepoName, helmutil.RepoURL, helmutil.RepoName, targetVersion)
 	if err != nil {
 		return err
 	}

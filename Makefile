@@ -50,6 +50,10 @@ test: fmt vet
 build: test ## Build kubectl-k8ssandra
 	CGO_ENABLED=0 go build -o kubectl-k8ssandra cmd/kubectl-k8ssandra/main.go
 
+.PHONY: build-mc
+build-mc: test ## Build mcctl
+	CGO_ENABLED=0 go build -o mcctl cmd/mcctl/main.go
+
 .PHONY: docker-build
 docker-build: ## Build k8ssandra-client
 	docker buildx build --build-arg VERSION=${VERSION} -t ${IMG_LATEST} . --load -f cmd/kubectl-k8ssandra/Dockerfile

@@ -18,7 +18,7 @@ import (
 )
 
 // DownloadChartRelease fetches the k8ssandra target version and extracts it to a directory which path is returned
-func DownloadChartRelease(chartName, targetVersion string) (string, error) {
+func DownloadChartRelease(repoName, repoURL, chartName, targetVersion string) (string, error) {
 	// Unfortunately, the helm's chart pull command uses "internal" marked structs, so it can't be used for
 	// pulling the data. Thus, we need to replicate the implementation here and use our own cache
 	settings := cli.New()
@@ -40,15 +40,15 @@ func DownloadChartRelease(chartName, targetVersion string) (string, error) {
 
 	// helm repo add k8ssandra https://helm.k8ssandra.io/
 	r, err := repo.NewChartRepository(&repo.Entry{
-		Name: RepoName,
-		URL:  RepoURL,
+		Name: repoName,
+		URL:  repoURL,
 	}, getter.All(settings))
 
 	if err != nil {
 		return "", err
 	}
 
-	// helm repo update
+	// helm repo update k8ssandra
 	index, err := r.DownloadIndexFile()
 	if err != nil {
 		return "", err
@@ -60,15 +60,13 @@ func DownloadChartRelease(chartName, targetVersion string) (string, error) {
 		return "", err
 	}
 
-	// TODO We need configurable ChartName to get cass-operator downloaded also
-
 	// chart name, chart version
 	cv, err := repoIndex.Get(chartName, targetVersion)
 	if err != nil {
 		return "", err
 	}
 
-	url, err := repo.ResolveReferenceURL(RepoURL, cv.URLs[0])
+	url, err := repo.ResolveReferenceURL(repoURL, cv.URLs[0])
 	if err != nil {
 		return "", err
 	}
@@ -131,6 +129,11 @@ func Install(cfg *action.Configuration, releaseName, path, namespace string, val
 	}
 
 	return installAction.Run(chartReq, values)
+}
+
+func Uninstall(cfg *action.Configuration, releaseName string) (*release.UninstallReleaseResponse, error) {
+	uninstallAction := action.NewUninstall(cfg)
+	return uninstallAction.Run(releaseName)
 }
 
 // ValuesYaml fetches the chartVersion's values.yaml file for editing purposes

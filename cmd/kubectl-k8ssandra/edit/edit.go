@@ -115,7 +115,7 @@ func (c *options) Run() error {
 
 	// Verify if we have local copy of the values.yaml
 	// 	if not, fetch it
-	chartDir, err := helmutil.DownloadChartRelease(chartInfo.Metadata.Name, chartInfo.Metadata.Version)
+	chartDir, err := helmutil.DownloadChartRelease(helmutil.RepoName, helmutil.RepoURL, chartInfo.Metadata.Name, chartInfo.Metadata.Version)
 	if err != nil {
 		return err
 	}

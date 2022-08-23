@@ -26,6 +26,12 @@ type MigrateFinisher struct {
 	clusterConfigMap ClusterConfigMap
 }
 
+/*
+	TODO:
+		- DSE_HOME could indicate more to us
+		- We need to remove the startup scripts / disable them (such as systemd start scripts)
+*/
+
 func NewMigrateFinisher(cli client.Client, namespace, datacenter string) *MigrateFinisher {
 	return &MigrateFinisher{
 		Client:     cli,

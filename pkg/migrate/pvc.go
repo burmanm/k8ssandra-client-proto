@@ -67,6 +67,10 @@ func parseDataPaths(cassandraYaml map[string]interface{}) ([]string, map[string]
 	additionalDirectories := make(map[string]string)
 	dataDirectories := make([]string, 0)
 
+	// TODO We will need additional mounts at least for:
+	//		dse.yaml => system_key_directory (encryption keys - how do we handle this?)
+	//		dse.yaml => kerberos-file paths (or how does cass-config-builder handle it?)
+
 	for key, val := range cassandraYaml {
 		if strings.HasSuffix(key, "_directory") {
 			additionalDirectories[key] = val.(string)
@@ -81,42 +85,42 @@ func parseDataPaths(cassandraYaml map[string]interface{}) ([]string, map[string]
 	return dataDirectories, additionalDirectories, nil
 }
 
-func (n *NodeMigrator) ValidateMountTargets() error {
+func (n *NodeMigrator) ValidateMountTargets() (int, error) {
 	dataDirs, additionalDirs, err := parseDataPaths(n.configs.CassYaml())
 	if err != nil {
-		return err
+		return -1, err
 	}
 
 	if len(dataDirs) < 1 {
-		return fmt.Errorf("no data_file_directories found")
+		return -1, fmt.Errorf("no data_file_directories found")
 	}
 
 	targetGid := uint32(0)
 	for _, dir := range dataDirs {
 		gid, err := GetFsGroup(dir)
 		if err != nil {
-			return err
+			return -1, err
 		}
 		if targetGid == 0 {
 			targetGid = gid
 		}
 		if gid != targetGid {
-			return fmt.Errorf("found multiple group ids in target directories")
+			return -1, fmt.Errorf("found multiple group ids in target directories")
 		}
 	}
 
 	for _, dir := range additionalDirs {
 		gid, err := GetFsGroup(dir)
 		if err != nil {
-			return err
+			return -1, err
 		}
 		if gid != targetGid {
-			return fmt.Errorf("found multiple group ids in target directories")
+			return -1, fmt.Errorf("found multiple group ids in target directories")
 		}
 
 	}
 
-	return nil
+	return int(targetGid), nil
 }
 
 func GetFsGroup(path string) (uint32, error) {
@@ -200,7 +204,6 @@ func (n *NodeMigrator) createVolumeMounts() error {
 		return err
 	}
 
-	// TODO Add to validation also
 	if len(dataDirs) < 1 {
 		return fmt.Errorf("no data_file_directories found")
 	}

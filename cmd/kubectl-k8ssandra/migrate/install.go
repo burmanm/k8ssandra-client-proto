@@ -19,6 +19,7 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/cli-runtime/pkg/genericclioptions"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
 var (
@@ -29,10 +30,6 @@ var (
 	`
 	// errNotEnoughParameters = fmt.Errorf("not enough parameters to run nodetool")
 )
-
-// const (
-// 	releaseName = "migrate"
-// )
 
 type installOptions struct {
 	configFlags *genericclioptions.ConfigFlags
@@ -90,11 +87,6 @@ func (c *installOptions) Complete(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	// Create new namespace for this usage
-	// if c.namespace == "default" || c.namespace == "" {
-	// 	c.namespace = releaseName
-	// }
-
 	actionConfig := new(action.Configuration)
 	settings := cli.New()
 	settings.SetNamespace(c.namespace)
@@ -121,7 +113,7 @@ func (c *installOptions) Run() error {
 
 	spinnerLiveText.UpdateText("Creating Kubernetes client to namespace " + c.namespace)
 
-	client, err := cassdcutil.GetClientInNamespace(c.namespace)
+	kubeClient, err := cassdcutil.GetClientInNamespace(c.namespace)
 	if err != nil {
 		pterm.Error.Printf("Failed to connect to Kubernetes node: %v", err)
 		return err
@@ -129,46 +121,51 @@ func (c *installOptions) Run() error {
 
 	pterm.Success.Println("Connected to Kubernetes node")
 
-	err = cassdcutil.CreateNamespaceIfNotExists(client, c.namespace)
+	err = cassdcutil.CreateNamespaceIfNotExists(kubeClient, c.namespace)
+	if err != nil {
+		return err
+	}
+
+	err = cassdcutil.CreateNamespaceIfNotExists(kubeClient, "cert-manager")
+	if err != nil {
+		return err
+	}
+
+	spinnerLiveText.UpdateText("Installing cert-manager to the Kubernetes cluster")
+
+	// TODO Migrate this to ClusterMigrator..
+
+	err = c.installCertManager(kubeClient, spinnerLiveText)
 	if err != nil {
 		return err
 	}
 
 	spinnerLiveText.UpdateText("Installing k8ssandra-operator to the Kubernetes cluster")
 
-	// TODO Migrate this to ClusterMigrator..
-
-	// cassOperatorValues := map[string]interface{}{}
-	p := getter.All(c.settings)
-	valueOpts := &values.Options{}
-	k8ssandraOperatorValues, err := valueOpts.MergeValues(p)
+	err = c.installK8ssandraOperator(kubeClient, spinnerLiveText)
 	if err != nil {
 		return err
 	}
 
-	downloadPath, err := helmutil.DownloadChartRelease("k8ssandra-operator", "")
-	if err != nil {
-		pterm.Error.Printf("Failed to download cass-operator: %v", err)
-		return err
-	}
+	pterm.Info.Println("Management tools have been successfully installed")
 
-	pterm.Success.Println("Downloaded k8ssandra-operator chart")
+	return nil
+}
 
-	_, err = helmutil.Install(c.cfg, releaseName, downloadPath, c.namespace, k8ssandraOperatorValues)
-	if err != nil {
+func (c *installOptions) installK8ssandraOperator(kubeClient client.Client, spinnerLiveText *pterm.SpinnerPrinter) error {
+	if err := c.installOperator(kubeClient, c.namespace, spinnerLiveText, helmutil.RepoName, helmutil.RepoURL, "k8ssandra-operator", "mc", nil); err != nil {
 		pterm.Error.Printf("Failed to install k8ssandra-operator: %v", err)
 		return err
 	}
-
-	pterm.Success.Println("Installed k8ssandra-operator chart")
+	pterm.Success.Println("k8ssandra-operator has been installed")
 
 	spinnerLiveText.UpdateText("Waiting for k8ssandra-operator to start...")
 
-	err = wait.PollImmediate(5*time.Second, 10*time.Minute, func() (bool, error) {
+	err := wait.PollImmediate(5*time.Second, 10*time.Minute, func() (bool, error) {
 		// depl := &corev1.Deployment{}
 		depl := &appsv1.Deployment{}
-		deplKey := types.NamespacedName{Name: fmt.Sprintf("%s-k8ssandra-operator", releaseName), Namespace: c.namespace}
-		if err := client.Get(context.TODO(), deplKey, depl); err != nil {
+		deplKey := types.NamespacedName{Name: fmt.Sprintf("%s-k8ssandra-operator", "mc"), Namespace: c.namespace}
+		if err := kubeClient.Get(context.TODO(), deplKey, depl); err != nil {
 			return false, err
 		}
 		return depl.Status.ReadyReplicas > 0, nil
@@ -178,7 +175,48 @@ func (c *installOptions) Run() error {
 	}
 
 	pterm.Success.Println("k8ssandra-operator has started")
-	pterm.Info.Println("Management tools have been successfully installed")
 
+	return nil
+}
+
+func (c *installOptions) installCertManager(kubeClient client.Client, spinnerLiveText *pterm.SpinnerPrinter) error {
+	// kubectl apply -f https://github.com/cert-manager/cert-manager/releases/download/v1.9.1/cert-manager.crds.yaml
+	// cert-manager doesn't have all the CRDs correctly in their package. For whatever reason
+	valueOpts := &values.Options{
+		StringValues: []string{"installCRDs=true"},
+	}
+	if err := c.installOperator(kubeClient, "cert-manager", spinnerLiveText, "jetstack", "https://charts.jetstack.io", "cert-manager", "certs", valueOpts); err != nil {
+		return err
+	}
+	pterm.Success.Println("cert-manager has been installed")
+
+	return nil
+}
+
+func (c *installOptions) installOperator(kubeClient client.Client, namespace string, spinnerLiveText *pterm.SpinnerPrinter, repoName, repoURL, chartName, relName string, valueOpts *values.Options) error {
+	p := getter.All(c.settings)
+	if valueOpts == nil {
+		valueOpts = &values.Options{}
+	}
+	operatorValues, err := valueOpts.MergeValues(p)
+	if err != nil {
+		return err
+	}
+
+	downloadPath, err := helmutil.DownloadChartRelease(repoName, repoURL, chartName, "")
+	if err != nil {
+		pterm.Error.Printf("Failed to download %s: %v", chartName, err)
+		return err
+	}
+
+	pterm.Success.Printf("Downloaded %s chart", chartName)
+
+	_, err = helmutil.Install(c.cfg, relName, downloadPath, namespace, operatorValues)
+	if err != nil {
+		pterm.Error.Printf("Failed to install %s: %v", chartName, err)
+		return err
+	}
+
+	pterm.Success.Printf("Installed %s chart", chartName)
 	return nil
 }

@@ -12,6 +12,8 @@ func TestConfigParsing(t *testing.T) {
 	confDir := filepath.Join("..", "..", "testfiles")
 	parser := NewParser(confDir)
 	err := parser.ParseConfigs()
+
+	require.Equal(2, len(parser.yamls))
 	require.NoError(err)
 }
 

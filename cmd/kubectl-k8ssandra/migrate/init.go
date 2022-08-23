@@ -171,7 +171,7 @@ func (c *options) Run() error {
 		return err
 	}
 
-	downloadPath, err := helmutil.DownloadChartRelease("cass-operator", "0.37.0")
+	downloadPath, err := helmutil.DownloadChartRelease(helmutil.RepoName, helmutil.RepoURL, "cass-operator", "0.37.0")
 	if err != nil {
 		pterm.Error.Printf("Failed to download cass-operator: %v", err)
 		return err
