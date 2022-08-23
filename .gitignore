@@ -18,6 +18,8 @@
 cmd/kubectl-k8ssandra/kubectl-k8ssandra
 kubectl-k8ssandra
 !kubectl-k8ssandra/
+mcctl
+!mcctl/
 
 # Local History for Visual Studio Code
 .history/
