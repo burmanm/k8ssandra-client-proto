@@ -40,9 +40,10 @@ const (
 
 type ClusterMigrator struct {
 	client.Client
-	NodetoolPath  string
-	CassandraHome string
-	ConfigDir     string
+	NodetoolPath       string
+	DseConfigOverride  string
+	CassConfigOverride string
+	CassandraHome      string
 
 	Cluster    string
 	Datacenter string
@@ -65,33 +66,19 @@ func NewClusterMigrator(client client.Client, namespace, configDir string) (*Clu
 	return &ClusterMigrator{
 		Client:    client,
 		Namespace: namespace,
-		ConfigDir: configDir,
 		seeds:     make([]string, 0),
 	}, nil
 }
 
 func (c *ClusterMigrator) InitCluster(p *pterm.SpinnerPrinter) error {
-	// p, err := pterm.DefaultProgressbar.WithTitle("Parsing cluster details").WithShowCount(false).WithShowPercentage(false).Start()
-	// if err != nil {
-	// 	return err
-	// }
-
-	// TODO Replace with something prettier? Such as BubbleTea?
-
 	p.UpdateText("Fetching Cassandra cluster details")
 	err := c.CreateClusterConfigMap()
 	if err != nil {
-		fmt.Printf("Failed to get cluster details: %v\n", err)
-		// pterm.Fatal.Println("Failed to get cluster details")
+		pterm.Error.Println("Failed to get cluster details")
 		return err
 	}
 
 	pterm.Success.Println("Fetched cluster details from Cassandra node and stored them to Kubernetes")
-
-	// configParser := NewParser(c.Client, c.Namespace, c.CassandraHome, c.Datacenter)
-	// if err != nil {
-	// 	return err
-	// }
 
 	p.UpdateText("Parsing Cassandra configuration")
 
@@ -106,8 +93,7 @@ func (c *ClusterMigrator) InitCluster(p *pterm.SpinnerPrinter) error {
 	p.UpdateText("Creating seed services")
 	err = c.CreateSeedServices()
 	if err != nil {
-		// fmt.Printf("Failed to get cluster seeds: %v\n", err)
-		// pterm.Fatal.Println("Failed to get cluster seeds")
+		pterm.Error.Println("Failed to get cluster seeds")
 		return err
 	}
 	pterm.Success.Println("Created seed services")

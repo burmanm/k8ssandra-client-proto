@@ -19,11 +19,18 @@ import (
 	definitions "github.com/burmanm/definitions-parser/pkg/types/matcher"
 )
 
-type ConfigParser struct {
-	configDir string
-	// cassandraHome string
+const (
+	cassYamlKey      = "cassandra-yaml"
+	cassYamlFilename = "cassandra.yaml"
+	dseYamlFilename  = "dse.yaml"
+)
 
-	yamls map[string]map[string]interface{}
+type ConfigParser struct {
+	cassConfigHome string
+	dseConfigHome  string
+
+	yamls      map[string]map[string]interface{}
+	jvmOptions map[string]string
 }
 
 func (p *ConfigParser) Yamls() map[string]map[string]interface{} {
@@ -31,15 +38,15 @@ func (p *ConfigParser) Yamls() map[string]map[string]interface{} {
 }
 
 func (p *ConfigParser) CassYaml() map[string]interface{} {
-	return p.yamls["cassandra-yaml"]
+	return p.yamls[cassYamlKey]
 }
 
 func (p *ConfigParser) ParseConfigs() error {
-	if err := p.parseYaml("cassandra.yaml"); err != nil {
+	if err := p.parseYaml(p.cassConfigHome, cassYamlFilename); err != nil {
 		return err
 	}
 
-	if err := p.parseYaml("dse.yaml"); err != nil {
+	if err := p.parseYaml(p.dseConfigHome, dseYamlFilename); err != nil {
 		return err
 	}
 
@@ -50,17 +57,105 @@ func (p *ConfigParser) ParseConfigs() error {
 	return nil
 }
 
+const (
+	installerDefault = "/usr/share/dse"
+)
+
+func VerifyFileExists(yamlPath string) (bool, error) {
+	if _, err := os.Stat(yamlPath); err != nil {
+		if os.IsNotExist(err) {
+			return false, nil
+		}
+		return false, err
+	}
+
+	return true, nil
+}
+
+// DetectConfigDirectories searches through known config directories
+// https://docs.datastax.com/en/installing/docs/dsePackageLoc.html
+// https://docs.datastax.com/en/installing/docs/dseTarLoc.html
+func (p *ConfigParser) ParseConfigDirectories(cassConfDir, dseConfDir, cassandraHome string) error {
+	verifier := func(cassConfDir, dseConfDir string) error {
+		foundCass, err := VerifyFileExists(filepath.Join(cassConfDir, "cassandra.yaml"))
+		if err != nil {
+			return err
+		}
+		foundDse, err := VerifyFileExists(filepath.Join(dseConfDir, "dse.yaml"))
+		if err != nil {
+			return err
+		}
+
+		if foundCass && foundDse {
+			p.dseConfigHome = dseConfDir
+			p.cassConfigHome = cassConfDir
+		}
+
+		return nil
+	}
+
+	installChecker := func(installDir string) error {
+		cassConfDir = filepath.Join(installDir, "resources", "cassandra", "conf")
+		dseConfDir = filepath.Join(installDir, "resources", "dse", "conf")
+
+		if err := verifier(cassConfDir, dseConfDir); err != nil {
+			return err
+		}
+
+		return nil
+	}
+
+	if cassConfDir != "" && dseConfDir != "" {
+		// If user gives override values, we will not try to detect any other directory
+		return verifier(cassConfDir, dseConfDir)
+	}
+
+	// Detect DSE_HOME / override home value for configs
+
+	if cassandraHome != "" {
+		if err := installChecker(cassandraHome); err != nil {
+			return err
+		}
+	}
+
+	// Check package installation dirs
+	if p.dseConfigHome == "" {
+		cassConfDir = "/etc/dse/cassandra/"
+		dseConfDir = "/etc/dse/"
+
+		if err := verifier(cassConfDir, dseConfDir); err != nil {
+			return err
+		}
+	}
+
+	// Datastax Installer directory
+	if p.dseConfigHome == "" {
+		if err := installChecker(installerDefault); err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
 var serverOptionName = regexp.MustCompile("^jvm.*-server.options$")
 
-func NewParser(configDir string) *ConfigParser {
-	return &ConfigParser{
-		configDir: configDir,
-		yamls:     make(map[string]map[string]interface{}),
+func NewParser() *ConfigParser {
+	p := &ConfigParser{
+		jvmOptions: make(map[string]string),
+		yamls:      make(map[string]map[string]interface{}),
 	}
+
+	return p
 }
 
 func (c *ClusterMigrator) ParseConfigs(p *pterm.SpinnerPrinter) error {
-	cfgParser := NewParser(c.ConfigDir)
+	cfgParser := NewParser()
+
+	if err := cfgParser.ParseConfigDirectories(c.CassConfigOverride, c.DseConfigOverride, c.CassandraHome); err != nil {
+		return err
+	}
+
 	if err := cfgParser.ParseConfigs(); err != nil {
 		return err
 	}
@@ -107,7 +202,7 @@ func (p *ConfigParser) parseJVMOptions() error {
 	// Parse here to the correct final format..
 
 	// Parse through all $CONF_DIRECTORY/jvm*-server.options and write them to a ConfigMap
-	return filepath.WalkDir(p.getConfigDir(), func(path string, d fs.DirEntry, err error) error {
+	return filepath.WalkDir(p.cassConfigHome, func(path string, d fs.DirEntry, err error) error {
 		if err != nil {
 			// Couldn't access the file for some reason
 			return err
@@ -167,8 +262,8 @@ func (p *ConfigParser) getJvmOptionsKey(jdkVersion string) string {
 	return strings.ReplaceAll(fmt.Sprintf("jvm%s-server.options", jdkVersion), ".", "-")
 }
 
-func (p *ConfigParser) parseYaml(name string) error {
-	yamlPath := filepath.Join(p.getConfigDir(), name)
+func (p *ConfigParser) parseYaml(configDir, name string) error {
+	yamlPath := filepath.Join(configDir, name)
 
 	if _, err := os.Stat(yamlPath); err != nil {
 		if os.IsNotExist(err) {
@@ -251,10 +346,4 @@ func (c *ClusterMigrator) storeConfigFiles(configFilesMap *corev1.ConfigMap, yam
 
 func getConfigMapName(datacenter, configName string) string {
 	return fmt.Sprintf("%s-%s", datacenter, configName)
-}
-
-func (p *ConfigParser) getConfigDir() string {
-	// TODO Give the possibility to override config path
-	return p.configDir
-	// return fmt.Sprintf("%s/conf", p.cassandraHome)
 }

@@ -32,20 +32,22 @@ const (
 	SystemLoggerContainerName            = "server-system-logger"
 )
 
-func NewNodeMigrator(cli client.Client, namespace, cassandraHome string) *NodeMigrator {
+func NewNodeMigrator(cli client.Client, namespace string) *NodeMigrator {
 	return &NodeMigrator{
-		Client:        cli,
-		Namespace:     namespace,
-		CassandraHome: cassandraHome,
+		Client:    cli,
+		Namespace: namespace,
 	}
 }
 
-func (n *NodeMigrator) MigrateNode(p *pterm.SpinnerPrinter, configDir string) error {
+func (n *NodeMigrator) MigrateNode(p *pterm.SpinnerPrinter) error {
 	n.p = p
-	// TODO Use the ButterTea or something for prettier output
 	p.UpdateText("Getting Cassandra node information")
 
-	cfgParser := NewParser(configDir)
+	cfgParser := NewParser()
+	if err := cfgParser.ParseConfigDirectories(n.CassConfigOverride, n.DseConfigOverride, n.CassandraHome); err != nil {
+		return err
+	}
+
 	if err := cfgParser.ParseConfigs(); err != nil {
 		return err
 	}
