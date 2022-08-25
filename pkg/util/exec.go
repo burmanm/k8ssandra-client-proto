@@ -7,6 +7,9 @@ import (
 	"k8s.io/client-go/rest"
 	"k8s.io/kubectl/pkg/cmd/exec"
 	"k8s.io/kubectl/pkg/scheme"
+
+	// Import all Kubernetes client auth plugins (e.g. Azure, GCP, OIDC, etc.)
+	_ "k8s.io/client-go/plugin/pkg/client/auth"
 )
 
 // SetKubernetesDefaults hack is copied from kubectl/exec (unexported)
