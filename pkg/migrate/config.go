@@ -15,6 +15,8 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/types"
+
+	definitions "github.com/burmanm/definitions-parser/pkg/types/matcher"
 )
 
 type ConfigParser struct {
@@ -22,8 +24,6 @@ type ConfigParser struct {
 	// cassandraHome string
 
 	yamls map[string]map[string]interface{}
-
-	jvmOptions map[string]string
 }
 
 func (p *ConfigParser) Yamls() map[string]map[string]interface{} {
@@ -32,11 +32,6 @@ func (p *ConfigParser) Yamls() map[string]map[string]interface{} {
 
 func (p *ConfigParser) CassYaml() map[string]interface{} {
 	return p.yamls["cassandra-yaml"]
-}
-
-func (p *ConfigParser) JvmOptions(jdkVersion string) string {
-	keyName := p.getJvmOptionsKey(jdkVersion)
-	return p.jvmOptions[keyName]
 }
 
 func (p *ConfigParser) ParseConfigs() error {
@@ -59,9 +54,8 @@ var serverOptionName = regexp.MustCompile("^jvm.*-server.options$")
 
 func NewParser(configDir string) *ConfigParser {
 	return &ConfigParser{
-		configDir:  configDir,
-		jvmOptions: make(map[string]string),
-		yamls:      make(map[string]map[string]interface{}),
+		configDir: configDir,
+		yamls:     make(map[string]map[string]interface{}),
 	}
 }
 
@@ -110,6 +104,8 @@ func (c *ClusterMigrator) getOrCreateConfigMap() (*corev1.ConfigMap, error) {
 }
 
 func (p *ConfigParser) parseJVMOptions() error {
+	// Parse here to the correct final format..
+
 	// Parse through all $CONF_DIRECTORY/jvm*-server.options and write them to a ConfigMap
 	return filepath.WalkDir(p.getConfigDir(), func(path string, d fs.DirEntry, err error) error {
 		if err != nil {
@@ -131,12 +127,22 @@ func (p *ConfigParser) parseJVMOptions() error {
 			defer f.Close()
 
 			var configData strings.Builder
+			parsedConfig := make(map[string]interface{})
+			additionalJvmOptions := make([]string, 0)
+
+			matcher := definitions.NewMetadataMatcher(d.Name())
 
 			// Remove the comment lines to reduce the ConfigMap size
 			scanner := bufio.NewScanner(f)
 			for scanner.Scan() {
 				line := scanner.Text()
-				if !strings.HasPrefix(line, "#") {
+				if !strings.HasPrefix(line, "#") && (strings.HasPrefix(line, "-X") || strings.HasPrefix(line, "-D")) {
+					key, val, defaultVal := matcher.Parse(line)
+					if key == "" {
+						additionalJvmOptions = append(additionalJvmOptions, line)
+					} else if val != defaultVal {
+						parsedConfig[key] = val
+					}
 					configData.WriteString(line)
 				}
 			}
@@ -146,7 +152,12 @@ func (p *ConfigParser) parseJVMOptions() error {
 			}
 
 			keyName := strings.ReplaceAll(d.Name(), ".", "-")
-			p.jvmOptions[keyName] = configData.String()
+
+			if len(additionalJvmOptions) > 0 {
+				parsedConfig["additional-jvm-options"] = additionalJvmOptions
+			}
+
+			p.yamls[keyName] = parsedConfig
 		}
 		return nil
 	})

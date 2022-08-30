@@ -147,14 +147,14 @@ func (c *MigrateFinisher) createCassandraDatacenter() error {
 		return err
 	}
 
-	cassandraYaml := configFilesMap.Data["cassandra-yaml"]
-	modelValues := make(map[string]interface{})
-	if err := yaml.Unmarshal([]byte(cassandraYaml), modelValues); err != nil {
-		return err
-	}
+	config := make(map[string]interface{})
 
-	config := map[string]interface{}{
-		"cassandra-yaml": modelValues,
+	for yamlKey, yamlFile := range configFilesMap.Data {
+		modelValues := make(map[string]interface{})
+		if err := yaml.Unmarshal([]byte(yamlFile), modelValues); err != nil {
+			return err
+		}
+		config[yamlKey] = modelValues
 	}
 
 	modelBytes, err := json.Marshal(config)
