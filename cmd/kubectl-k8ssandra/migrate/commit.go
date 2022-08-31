@@ -99,7 +99,12 @@ func (c *commitOptions) Run() error {
 
 	spinnerLiveText.UpdateText("Creating Kubernetes client to namespace " + c.namespace)
 
-	client, err := cassdcutil.GetClientInNamespace(c.namespace)
+	restConfig, err := c.configFlags.ToRESTConfig()
+	if err != nil {
+		return err
+	}
+
+	kubeClient, err := cassdcutil.GetClientInNamespace(restConfig, c.namespace)
 	if err != nil {
 		pterm.Error.Printf("Failed to connect to Kubernetes node: %v", err)
 		return err
@@ -107,7 +112,7 @@ func (c *commitOptions) Run() error {
 
 	pterm.Success.Println("Connected to Kubernetes node")
 
-	migrator := migrate.NewMigrateFinisher(client, c.namespace, c.datacenter)
+	migrator := migrate.NewMigrateFinisher(kubeClient, c.namespace, c.datacenter)
 
 	err = migrator.FinishInstallation(spinnerLiveText)
 	if err != nil {

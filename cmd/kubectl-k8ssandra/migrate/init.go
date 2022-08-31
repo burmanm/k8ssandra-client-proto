@@ -137,7 +137,12 @@ func (c *options) Run() error {
 
 	spinnerLiveText.UpdateText("Creating Kubernetes client to namespace " + c.namespace)
 
-	client, err := cassdcutil.GetClientInNamespace(c.namespace)
+	restConfig, err := c.configFlags.ToRESTConfig()
+	if err != nil {
+		return err
+	}
+
+	kubeClient, err := cassdcutil.GetClientInNamespace(restConfig, c.namespace)
 	if err != nil {
 		pterm.Error.Printf("Failed to connect to Kubernetes node: %v", err)
 		return err
@@ -145,12 +150,12 @@ func (c *options) Run() error {
 
 	pterm.Success.Println("Connected to Kubernetes node")
 
-	err = cassdcutil.CreateNamespaceIfNotExists(client, c.namespace)
+	err = cassdcutil.CreateNamespaceIfNotExists(kubeClient, c.namespace)
 	if err != nil {
 		return err
 	}
 
-	migrator, err := migrate.NewClusterMigrator(client, c.namespace, c.configDir)
+	migrator, err := migrate.NewClusterMigrator(kubeClient, c.namespace, c.configDir)
 	if err != nil {
 		return err
 	}
@@ -193,7 +198,7 @@ func (c *options) Run() error {
 		// depl := &corev1.Deployment{}
 		depl := &appsv1.Deployment{}
 		deplKey := types.NamespacedName{Name: fmt.Sprintf("%s-cass-operator", releaseName), Namespace: c.namespace}
-		if err := client.Get(context.TODO(), deplKey, depl); err != nil {
+		if err := kubeClient.Get(context.TODO(), deplKey, depl); err != nil {
 			return false, err
 		}
 		return depl.Status.ReadyReplicas > 0, nil

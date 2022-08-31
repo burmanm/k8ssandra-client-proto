@@ -3,6 +3,7 @@ package nodetool
 import (
 	"fmt"
 
+	"github.com/burmanm/k8ssandra-client/pkg/cassdcutil"
 	"github.com/burmanm/k8ssandra-client/pkg/util"
 	"github.com/spf13/cobra"
 	"k8s.io/cli-runtime/pkg/genericclioptions"
@@ -73,7 +74,17 @@ func (c *options) Complete(cmd *cobra.Command, args []string) error {
 	c.execOptions = execOptions
 	execOptions.PodName = args[0]
 
-	cassSecret, err := util.GetCassandraSuperuserSecrets(execOptions.PodName, execOptions.Namespace)
+	restConfig, err := c.configFlags.ToRESTConfig()
+	if err != nil {
+		return err
+	}
+
+	kubeClient, err := cassdcutil.GetClientInNamespace(restConfig, execOptions.Namespace)
+	if err != nil {
+		return err
+	}
+
+	cassSecret, err := util.GetCassandraSuperuserSecrets(kubeClient, execOptions.PodName, execOptions.Namespace)
 	if err != nil {
 		return err
 	}

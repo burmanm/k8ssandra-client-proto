@@ -96,19 +96,24 @@ func (c *addOptions) Run() error {
 		return err
 	}
 
-	client, err := cassdcutil.GetClientInNamespace(c.namespace)
+	restConfig, err := c.configFlags.ToRESTConfig()
+	if err != nil {
+		return err
+	}
+
+	kubeClient, err := cassdcutil.GetClientInNamespace(restConfig, c.namespace)
 	if err != nil {
 		pterm.Error.Printf("Failed to connect to Kubernetes node: %v", err)
 		return err
 	}
 
 	// Create ManagementClient
-	mgmtClient, err := migrate.NewManagementClient(context.TODO(), client)
+	mgmtClient, err := migrate.NewManagementClient(context.TODO(), kubeClient)
 	if err != nil {
 		return err
 	}
 
-	cassManager := cassdcutil.NewManager(client)
+	cassManager := cassdcutil.NewManager(kubeClient)
 	dc, err := cassManager.CassandraDatacenter(c.datacenter, c.namespace)
 	if err != nil {
 		return err

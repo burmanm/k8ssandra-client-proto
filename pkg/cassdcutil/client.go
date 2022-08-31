@@ -7,12 +7,13 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/client-go/rest"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
 // GetClient returns a controller-runtime client with cass-operator API defined
-func GetClient() (client.Client, error) {
+func GetClient(restConfig *rest.Config) (client.Client, error) {
 	c, err := client.New(ctrl.GetConfigOrDie(), client.Options{})
 	if err != nil {
 		return nil, err
@@ -23,8 +24,8 @@ func GetClient() (client.Client, error) {
 	return c, err
 }
 
-func GetClientInNamespace(namespace string) (client.Client, error) {
-	c, err := GetClient()
+func GetClientInNamespace(restConfig *rest.Config, namespace string) (client.Client, error) {
+	c, err := GetClient(restConfig)
 	if err != nil {
 		return nil, err
 	}

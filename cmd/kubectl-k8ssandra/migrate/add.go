@@ -104,7 +104,12 @@ func (c *addOptions) Run() error {
 
 	p.UpdateText("Creating Kubernetes client to namespace " + c.namespace)
 
-	client, err := cassdcutil.GetClientInNamespace(c.namespace)
+	restConfig, err := c.configFlags.ToRESTConfig()
+	if err != nil {
+		return err
+	}
+
+	kubeClient, err := cassdcutil.GetClientInNamespace(restConfig, c.namespace)
 	if err != nil {
 		pterm.Error.Printf("Failed to connect to Kubernetes node: %v", err)
 		return err
@@ -132,7 +137,7 @@ func (c *addOptions) Run() error {
 
 	pterm.Success.Println("Acquired node migrator lock")
 
-	n := migrate.NewNodeMigrator(client, c.namespace, c.cassandraHome)
+	n := migrate.NewNodeMigrator(kubeClient, c.namespace, c.cassandraHome)
 	if err != nil {
 		return err
 	}

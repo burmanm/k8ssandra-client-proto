@@ -4,10 +4,10 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/burmanm/k8ssandra-client/pkg/cassdcutil"
 	cassdcapi "github.com/k8ssandra/cass-operator/apis/cassandra/v1beta1"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/types"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
 type CassandraPodSecrets struct {
@@ -15,15 +15,10 @@ type CassandraPodSecrets struct {
 	Password string
 }
 
-func GetCassandraSuperuserSecrets(podName, namespace string) (*CassandraPodSecrets, error) {
-	c, err := cassdcutil.GetClient()
-	if err != nil {
-		return nil, err
-	}
-
+func GetCassandraSuperuserSecrets(c client.Client, podName, namespace string) (*CassandraPodSecrets, error) {
 	key := types.NamespacedName{Namespace: namespace, Name: podName}
 	pod := &corev1.Pod{}
-	err = c.Get(context.TODO(), key, pod)
+	err := c.Get(context.TODO(), key, pod)
 	if err != nil {
 		return nil, err
 	}

@@ -3,6 +3,7 @@ package cqlsh
 import (
 	"fmt"
 
+	"github.com/burmanm/k8ssandra-client/pkg/cassdcutil"
 	"github.com/burmanm/k8ssandra-client/pkg/util"
 	"github.com/spf13/cobra"
 	"k8s.io/cli-runtime/pkg/genericclioptions"
@@ -78,8 +79,18 @@ func (c *options) Complete(cmd *cobra.Command, args []string) error {
 	execOptions.Stdin = true
 	execOptions.TTY = true
 
+	restConfig, err := c.configFlags.ToRESTConfig()
+	if err != nil {
+		return err
+	}
+
+	kubeClient, err := cassdcutil.GetClientInNamespace(restConfig, execOptions.Namespace)
+	if err != nil {
+		return err
+	}
+
 	// Needs secrets and commandLine
-	cassSecret, err := util.GetCassandraSuperuserSecrets(execOptions.PodName, execOptions.Namespace)
+	cassSecret, err := util.GetCassandraSuperuserSecrets(kubeClient, execOptions.PodName, execOptions.Namespace)
 	if err != nil {
 		return err
 	}

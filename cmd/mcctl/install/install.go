@@ -113,7 +113,12 @@ func (c *installOptions) Run() error {
 
 	spinnerLiveText.UpdateText("Creating Kubernetes client to namespace " + c.namespace)
 
-	kubeClient, err := cassdcutil.GetClientInNamespace(c.namespace)
+	restConfig, err := c.configFlags.ToRESTConfig()
+	if err != nil {
+		return err
+	}
+
+	kubeClient, err := cassdcutil.GetClientInNamespace(restConfig, c.namespace)
 	if err != nil {
 		pterm.Error.Printf("Failed to connect to Kubernetes node: %v", err)
 		return err

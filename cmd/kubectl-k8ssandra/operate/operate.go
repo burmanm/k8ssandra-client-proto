@@ -148,12 +148,17 @@ func (c *options) Complete(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	client, err := cassdcutil.GetClientInNamespace(c.namespace)
+	restConfig, err := c.configFlags.ToRESTConfig()
 	if err != nil {
 		return err
 	}
 
-	c.cassManager = cassdcutil.NewManager(client)
+	kubeClient, err := cassdcutil.GetClientInNamespace(restConfig, c.namespace)
+	if err != nil {
+		return err
+	}
+
+	c.cassManager = cassdcutil.NewManager(kubeClient)
 
 	return nil
 }
