@@ -30,7 +30,7 @@ type options struct {
 
 func newListOptions(streams genericclioptions.IOStreams) *options {
 	return &options{
-		configFlags: genericclioptions.NewConfigFlags(true),
+		configFlags: genericclioptions.NewConfigFlags(false),
 		IOStreams:   streams,
 	}
 }

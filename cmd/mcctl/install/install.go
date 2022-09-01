@@ -34,14 +34,11 @@ type installOptions struct {
 	configFlags *genericclioptions.ConfigFlags
 	genericclioptions.IOStreams
 	namespace string
-
-	// Helm related
-	cfg *action.Configuration
 }
 
 func newInstallOptions(streams genericclioptions.IOStreams) *installOptions {
 	return &installOptions{
-		configFlags: genericclioptions.NewConfigFlags(true),
+		configFlags: genericclioptions.NewConfigFlags(false),
 		IOStreams:   streams,
 	}
 }
@@ -85,14 +82,7 @@ func (c *installOptions) Complete(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	actionConfig := new(action.Configuration)
-
-	helmDriver := os.Getenv("HELM_DRIVER")
-	if err := actionConfig.Init(c.configFlags, c.namespace, helmDriver, func(format string, v ...interface{}) {}); err != nil {
-		log.Fatal(err)
-	}
-
-	c.cfg = actionConfig
+	// c.cfg = actionConfig
 
 	return nil
 }
@@ -151,7 +141,7 @@ func (c *installOptions) Run() error {
 }
 
 func (c *installOptions) installK8ssandraOperator(kubeClient client.Client, spinnerLiveText *pterm.SpinnerPrinter) error {
-	if err := c.installOperator(kubeClient, c.namespace, spinnerLiveText, helmutil.RepoName, helmutil.RepoURL, "k8ssandra-operator", "mc", nil); err != nil {
+	if err := c.installOperator(c.namespace, spinnerLiveText, helmutil.RepoName, helmutil.RepoURL, "k8ssandra-operator", "mc", nil); err != nil {
 		pterm.Error.Printf("Failed to install k8ssandra-operator: %v", err)
 		return err
 	}
@@ -183,7 +173,7 @@ func (c *installOptions) installCertManager(kubeClient client.Client, spinnerLiv
 	valueOpts := &values.Options{
 		StringValues: []string{"installCRDs=true"},
 	}
-	if err := c.installOperator(kubeClient, "cert-manager", spinnerLiveText, "jetstack", "https://charts.jetstack.io", "cert-manager", "certs", valueOpts); err != nil {
+	if err := c.installOperator("cert-manager", spinnerLiveText, "jetstack", "https://charts.jetstack.io", "cert-manager", "certs", valueOpts); err != nil {
 		return err
 	}
 	pterm.Success.Println("cert-manager has been installed")
@@ -191,7 +181,7 @@ func (c *installOptions) installCertManager(kubeClient client.Client, spinnerLiv
 	return nil
 }
 
-func (c *installOptions) installOperator(kubeClient client.Client, namespace string, spinnerLiveText *pterm.SpinnerPrinter, repoName, repoURL, chartName, relName string, valueOpts *values.Options) error {
+func (c *installOptions) installOperator(namespace string, spinnerLiveText *pterm.SpinnerPrinter, repoName, repoURL, chartName, relName string, valueOpts *values.Options) error {
 	p := getter.Providers{getter.Provider{
 		Schemes: []string{"http", "https"},
 		New:     getter.NewHTTPGetter,
@@ -204,6 +194,13 @@ func (c *installOptions) installOperator(kubeClient client.Client, namespace str
 		return err
 	}
 
+	actionConfig := new(action.Configuration)
+
+	helmDriver := os.Getenv("HELM_DRIVER")
+	if err := actionConfig.Init(c.configFlags, namespace, helmDriver, func(format string, v ...interface{}) {}); err != nil {
+		log.Fatal(err)
+	}
+
 	downloadPath, err := helmutil.DownloadChartRelease(repoName, repoURL, chartName, "")
 	if err != nil {
 		pterm.Error.Printf("Failed to download %s: %v", chartName, err)
@@ -212,10 +209,12 @@ func (c *installOptions) installOperator(kubeClient client.Client, namespace str
 
 	pterm.Success.Printf("Downloaded %s chart", chartName)
 
-	_, err = helmutil.Install(c.cfg, relName, downloadPath, namespace, operatorValues)
+	_, err = helmutil.Install(actionConfig, relName, downloadPath, namespace, operatorValues)
 	if err != nil {
 		pterm.Error.Printf("Failed to install %s: %v", chartName, err)
-		return err
+		if !(err.Error() == "cannot re-use a name that is still in use") {
+			return err
+		}
 	}
 
 	pterm.Success.Printf("Installed %s chart", chartName)

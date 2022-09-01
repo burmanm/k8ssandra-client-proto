@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"strings"
 
 	"github.com/burmanm/k8ssandra-client/pkg/helmutil"
 	"github.com/pterm/pterm"
@@ -25,14 +26,11 @@ type uninstallOptions struct {
 	configFlags *genericclioptions.ConfigFlags
 	genericclioptions.IOStreams
 	namespace string
-
-	// Helm related
-	cfg *action.Configuration
 }
 
 func newUninstallOptions(streams genericclioptions.IOStreams) *uninstallOptions {
 	return &uninstallOptions{
-		configFlags: genericclioptions.NewConfigFlags(true),
+		configFlags: genericclioptions.NewConfigFlags(false),
 		IOStreams:   streams,
 	}
 }
@@ -76,15 +74,6 @@ func (c *uninstallOptions) Complete(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	actionConfig := new(action.Configuration)
-
-	helmDriver := os.Getenv("HELM_DRIVER")
-	if err := actionConfig.Init(c.configFlags, c.namespace, helmDriver, func(format string, v ...interface{}) {}); err != nil {
-		log.Fatal(err)
-	}
-
-	c.cfg = actionConfig
-
 	return nil
 }
 
@@ -99,14 +88,14 @@ func (c *uninstallOptions) Run() error {
 
 	spinnerLiveText.UpdateText("Removing k8ssandra-operator")
 
-	if _, err := helmutil.Uninstall(c.cfg, "mc"); err != nil {
+	if err := c.uninstallOperator(c.namespace, "mc"); err != nil {
 		pterm.Error.Println("Failed to uninstall k8ssandra-operator")
 		return err
 	}
 
 	pterm.Success.Println("k8ssandra-operator has been uninstalled")
 
-	if _, err := helmutil.Uninstall(c.cfg, "certs"); err != nil {
+	if err := c.uninstallOperator("cert-manager", "certs"); err != nil {
 		pterm.Error.Println("Failed to uninstall cert-manager")
 		return err
 	}
@@ -114,6 +103,24 @@ func (c *uninstallOptions) Run() error {
 	pterm.Success.Println("cert-manager has been uninstalled")
 
 	pterm.Info.Println("Management tools have been uninstalled")
+
+	return nil
+}
+
+func (c *uninstallOptions) uninstallOperator(namespace, releaseName string) error {
+	actionConfig := new(action.Configuration)
+
+	helmDriver := os.Getenv("HELM_DRIVER")
+	if err := actionConfig.Init(c.configFlags, namespace, helmDriver, func(format string, v ...interface{}) {}); err != nil {
+		log.Fatal(err)
+	}
+
+	if _, err := helmutil.Uninstall(actionConfig, releaseName); err != nil {
+		pterm.Error.Println("Failed to uninstall k8ssandra-operator")
+		if !strings.HasSuffix(err.Error(), "release: not found") {
+			return err
+		}
+	}
 
 	return nil
 }
