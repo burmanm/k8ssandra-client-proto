@@ -10,7 +10,6 @@ import (
 	"github.com/pterm/pterm"
 	"github.com/spf13/cobra"
 	"helm.sh/helm/v3/pkg/action"
-	"helm.sh/helm/v3/pkg/cli"
 	"helm.sh/helm/v3/pkg/release"
 	"k8s.io/cli-runtime/pkg/genericclioptions"
 )
@@ -26,9 +25,7 @@ var (
 type options struct {
 	configFlags *genericclioptions.ConfigFlags
 	genericclioptions.IOStreams
-	cfg              *action.Configuration
-	namespace        string
-	enforceNamespace bool
+	cfg *action.Configuration
 }
 
 func newListOptions(streams genericclioptions.IOStreams) *options {
@@ -76,14 +73,13 @@ func (c *options) Complete(cmd *cobra.Command, args []string) error {
 	}
 
 	actionConfig := new(action.Configuration)
-	settings := cli.New()
 
 	helmDriver := os.Getenv("HELM_DRIVER")
 	helmNamespace := ""
 	if enforceNamespace {
 		helmNamespace = namespace
 	}
-	if err := actionConfig.Init(settings.RESTClientGetter(), helmNamespace, helmDriver, func(format string, v ...interface{}) {}); err != nil {
+	if err := actionConfig.Init(c.configFlags, helmNamespace, helmDriver, func(format string, v ...interface{}) {}); err != nil {
 		log.Fatal(err)
 	}
 

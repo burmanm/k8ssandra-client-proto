@@ -9,7 +9,6 @@ import (
 	"github.com/pterm/pterm"
 	"github.com/spf13/cobra"
 	"helm.sh/helm/v3/pkg/action"
-	"helm.sh/helm/v3/pkg/cli"
 	"k8s.io/cli-runtime/pkg/genericclioptions"
 )
 
@@ -28,8 +27,7 @@ type uninstallOptions struct {
 	namespace string
 
 	// Helm related
-	cfg      *action.Configuration
-	settings *cli.EnvSettings
+	cfg *action.Configuration
 }
 
 func newUninstallOptions(streams genericclioptions.IOStreams) *uninstallOptions {
@@ -79,15 +77,12 @@ func (c *uninstallOptions) Complete(cmd *cobra.Command, args []string) error {
 	}
 
 	actionConfig := new(action.Configuration)
-	settings := cli.New()
-	settings.SetNamespace(c.namespace)
 
 	helmDriver := os.Getenv("HELM_DRIVER")
-	if err := actionConfig.Init(settings.RESTClientGetter(), c.namespace, helmDriver, func(format string, v ...interface{}) {}); err != nil {
+	if err := actionConfig.Init(c.configFlags, c.namespace, helmDriver, func(format string, v ...interface{}) {}); err != nil {
 		log.Fatal(err)
 	}
 
-	c.settings = settings
 	c.cfg = actionConfig
 
 	return nil

@@ -12,7 +12,6 @@ import (
 	"github.com/pterm/pterm"
 	"github.com/spf13/cobra"
 	"helm.sh/helm/v3/pkg/action"
-	"helm.sh/helm/v3/pkg/cli"
 	"helm.sh/helm/v3/pkg/cli/values"
 	"helm.sh/helm/v3/pkg/getter"
 	appsv1 "k8s.io/api/apps/v1"
@@ -37,8 +36,7 @@ type installOptions struct {
 	namespace string
 
 	// Helm related
-	cfg      *action.Configuration
-	settings *cli.EnvSettings
+	cfg *action.Configuration
 }
 
 func newInstallOptions(streams genericclioptions.IOStreams) *installOptions {
@@ -88,15 +86,12 @@ func (c *installOptions) Complete(cmd *cobra.Command, args []string) error {
 	}
 
 	actionConfig := new(action.Configuration)
-	settings := cli.New()
-	settings.SetNamespace(c.namespace)
 
 	helmDriver := os.Getenv("HELM_DRIVER")
-	if err := actionConfig.Init(settings.RESTClientGetter(), c.namespace, helmDriver, func(format string, v ...interface{}) {}); err != nil {
+	if err := actionConfig.Init(c.configFlags, c.namespace, helmDriver, func(format string, v ...interface{}) {}); err != nil {
 		log.Fatal(err)
 	}
 
-	c.settings = settings
 	c.cfg = actionConfig
 
 	return nil
@@ -197,7 +192,10 @@ func (c *installOptions) installCertManager(kubeClient client.Client, spinnerLiv
 }
 
 func (c *installOptions) installOperator(kubeClient client.Client, namespace string, spinnerLiveText *pterm.SpinnerPrinter, repoName, repoURL, chartName, relName string, valueOpts *values.Options) error {
-	p := getter.All(c.settings)
+	p := getter.Providers{getter.Provider{
+		Schemes: []string{"http", "https"},
+		New:     getter.NewHTTPGetter,
+	}}
 	if valueOpts == nil {
 		valueOpts = &values.Options{}
 	}
