@@ -59,6 +59,17 @@ func (n *NodeMigrator) MigrateNode(p *pterm.SpinnerPrinter, configDir string) er
 	}
 	pterm.Success.Println("Gathered information from local Cassandra node")
 
+	// TODO ValidateMountTargets needs a id to check against to validate cluster-wide ID matching
+	p.UpdateText("Validating storage rights")
+	fsGroupId, err := n.ValidateMountTargets()
+	if err != nil {
+		pterm.Error.Println("Failed to validate storage access rights")
+		return err
+	}
+
+	// TODO Store this fsGroupId to the configs
+	n.FSGroupId = fsGroupId
+
 	// Drain and shutdown the current node
 	p.UpdateText("Draining and shutting down the current node")
 	if err := n.drainAndShutdownNode(); err != nil {
@@ -283,7 +294,8 @@ func (n *NodeMigrator) CreatePod() error {
 	userId := int64(999)
 	userGroup := int64(999)
 	// TODO A placeholder in the dev machine
-	fsGroup := int64(121)
+	// fsGroup := int64(121)
+	fsGroup := int64(n.FSGroupId)
 
 	pod := &corev1.Pod{
 		ObjectMeta: metav1.ObjectMeta{

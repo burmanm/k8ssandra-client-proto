@@ -137,7 +137,8 @@ func (c *MigrateFinisher) createCassandraDatacenter() error {
 	storageClassName := "local-path"
 	userId := int64(999)
 	userGroup := int64(999)
-	// TODO A placeholder in the dev machine
+
+	// TODO Read from the cluster migration config - it should've been validated value
 	fsGroup := int64(121)
 
 	// TODO Move the configFileGetting to reusable function

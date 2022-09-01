@@ -42,6 +42,8 @@ type NodeMigrator struct {
 	ServerType    string
 	ServerVersion string
 
+	FSGroupId int
+
 	p *pterm.SpinnerPrinter
 }
 
