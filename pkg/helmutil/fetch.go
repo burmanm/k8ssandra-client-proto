@@ -123,6 +123,10 @@ func Install(cfg *action.Configuration, releaseName, path, namespace string, val
 	installAction := action.NewInstall(cfg)
 	installAction.ReleaseName = releaseName
 	installAction.Namespace = namespace
+	if releaseName == "mc" {
+		installAction.Devel = true
+		installAction.Version = ">0.0.0.0"
+	}
 	chartReq, err := loader.Load(path)
 	if err != nil {
 		return nil, err

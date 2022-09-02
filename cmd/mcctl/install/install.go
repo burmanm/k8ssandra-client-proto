@@ -141,7 +141,7 @@ func (c *installOptions) Run() error {
 }
 
 func (c *installOptions) installK8ssandraOperator(kubeClient client.Client, spinnerLiveText *pterm.SpinnerPrinter) error {
-	if err := c.installOperator(c.namespace, spinnerLiveText, helmutil.RepoName, helmutil.RepoURL, "k8ssandra-operator", "mc", nil); err != nil {
+	if err := c.installOperator(c.namespace, spinnerLiveText, helmutil.RepoName, helmutil.RepoURL, "k8ssandra-operator", "mc", "", nil); err != nil {
 		pterm.Error.Printf("Failed to install k8ssandra-operator: %v", err)
 		return err
 	}
@@ -173,7 +173,7 @@ func (c *installOptions) installCertManager(kubeClient client.Client, spinnerLiv
 	valueOpts := &values.Options{
 		StringValues: []string{"installCRDs=true"},
 	}
-	if err := c.installOperator("cert-manager", spinnerLiveText, "jetstack", "https://charts.jetstack.io", "cert-manager", "certs", valueOpts); err != nil {
+	if err := c.installOperator("cert-manager", spinnerLiveText, "jetstack", "https://charts.jetstack.io", "cert-manager", "certs", "", valueOpts); err != nil {
 		return err
 	}
 	pterm.Success.Println("cert-manager has been installed")
@@ -181,7 +181,7 @@ func (c *installOptions) installCertManager(kubeClient client.Client, spinnerLiv
 	return nil
 }
 
-func (c *installOptions) installOperator(namespace string, spinnerLiveText *pterm.SpinnerPrinter, repoName, repoURL, chartName, relName string, valueOpts *values.Options) error {
+func (c *installOptions) installOperator(namespace string, spinnerLiveText *pterm.SpinnerPrinter, repoName, repoURL, chartName, relName, version string, valueOpts *values.Options) error {
 	p := getter.Providers{getter.Provider{
 		Schemes: []string{"http", "https"},
 		New:     getter.NewHTTPGetter,
@@ -201,7 +201,7 @@ func (c *installOptions) installOperator(namespace string, spinnerLiveText *pter
 		log.Fatal(err)
 	}
 
-	downloadPath, err := helmutil.DownloadChartRelease(repoName, repoURL, chartName, "")
+	downloadPath, err := helmutil.DownloadChartRelease(repoName, repoURL, chartName, version)
 	if err != nil {
 		pterm.Error.Printf("Failed to download %s: %v", chartName, err)
 		return err
