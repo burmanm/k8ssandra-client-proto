@@ -13,8 +13,12 @@ func TestConfigParsing(t *testing.T) {
 	parser := NewParser(confDir)
 	err := parser.ParseConfigs()
 
-	require.Equal(2, len(parser.yamls))
+	require.Equal(4, len(parser.yamls))
 	require.NoError(err)
+
+	require.Equal(1, len(parser.yamls["jvm11-server-options"]))
+	addJvmOptions := parser.yamls["jvm11-server-options"]["additional-jvm-options"].([]string)
+	require.Equal(12, len(addJvmOptions))
 }
 
 func TestParseDataPaths(t *testing.T) {
