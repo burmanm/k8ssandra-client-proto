@@ -21,8 +21,10 @@ import (
 
 type NodeMigrator struct {
 	client.Client
-	NodetoolPath  string
-	CassandraHome string
+	NodetoolPath       string
+	CassandraHome      string
+	DseConfigOverride  string
+	CassConfigOverride string
 
 	configs *ConfigParser
 

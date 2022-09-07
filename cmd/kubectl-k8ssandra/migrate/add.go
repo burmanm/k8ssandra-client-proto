@@ -17,11 +17,16 @@ var (
 	# migrate local Cassandra node to the Kubernetes
 	%[1]s import add [<args>]
 
-	# Define CASSANDRA_HOME
-	%[1]s import add --cassandra-home=$CASSANDRA_HOME
+	# Override DSE_HOME env variable
+	%[1]s import add --cassandra-home=/path/to/dse/installation
 
+	# Override configuration paths
+	%[1]s import add --cass-config-dir=/usr/local/dse/cassandra/ --dse-config-dir=/usr/local/dse/
+
+	# Override nodetool location
+	%[1]s import add --nodetool-path=/usr/bin/nodetool
 	`
-	errNoCassandraHome = fmt.Errorf("cassandra-home is required parameter")
+	errNoCassandraHome = fmt.Errorf("cassandra-home was not detected")
 )
 
 type addOptions struct {
@@ -30,6 +35,8 @@ type addOptions struct {
 	namespace     string
 	nodetoolPath  string
 	cassandraHome string
+	dseConfigDir  string
+	cassConfigDir string
 	configDir     string
 }
 
@@ -66,8 +73,10 @@ func NewAddCmd(streams genericclioptions.IOStreams) *cobra.Command {
 	}
 
 	fl := cmd.Flags()
-	fl.StringVarP(&o.nodetoolPath, "nodetool-path", "p", "", "path to nodetool executable directory")
-	fl.StringVarP(&o.cassandraHome, "cassandra-home", "c", "", "path to cassandra/DSE installation directory")
+	fl.StringVarP(&o.nodetoolPath, "nodetool-path", "p", "", "path to override nodetool executable path")
+	fl.StringVarP(&o.cassandraHome, "cassandra-home", "c", "", "path to override cassandra/DSE installation directory")
+	fl.StringVarP(&o.cassConfigDir, "cass-config-dir", "c", "", "override cassandra.yaml configuration directory")
+	fl.StringVarP(&o.dseConfigDir, "dse-config-dir", "c", "", "override dse.yaml configuration directory")
 	fl.StringVarP(&o.configDir, "config-dir", "f", "", "path to cassandra/DSE configuration directory")
 	o.configFlags.AddFlags(fl)
 	return cmd
@@ -82,19 +91,17 @@ func (c *addOptions) Complete(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	// Create new namespace for this usage
-	if c.namespace == "default" || c.namespace == "" {
-		c.namespace = releaseName
-	}
-
 	return nil
 }
 
 // Validate ensures that all required arguments and flag values are provided
 func (c *addOptions) Validate() error {
-	// if c.cassandraHome == "" {
-	// 	return errNoCassandraHome
-	// }
+	cassandraHome, nodetoolPath, err := migrate.DetectInstallation(c.cassandraHome, c.nodetoolPath)
+	if err != nil {
+		return err
+	}
+	c.cassandraHome = cassandraHome
+	c.nodetoolPath = nodetoolPath
 	return nil
 }
 
@@ -117,6 +124,8 @@ func (c *addOptions) Run() error {
 
 	pterm.Success.Println("Connected to Kubernetes node")
 
+	// TODO This logic belongs to the pkg
+
 	lock, err := migrate.NewResourceLock(c.namespace)
 	if err != nil {
 		pterm.Error.Printf("Failed to create resource lock: %v", err)
@@ -137,16 +146,12 @@ func (c *addOptions) Run() error {
 
 	pterm.Success.Println("Acquired node migrator lock")
 
-	n := migrate.NewNodeMigrator(kubeClient, c.namespace, c.cassandraHome)
+	n := migrate.NewNodeMigrator(kubeClient, c.namespace)
 	if err != nil {
 		return err
 	}
 
-	if c.nodetoolPath != "" {
-		n.NodetoolPath = c.nodetoolPath
-	}
-
-	err = n.MigrateNode(p, c.configDir)
+	err = n.MigrateNode(p)
 	if err != nil {
 		pterm.Error.Printf("Failed to migrate local Cassandra node to Kubernetes: %v", err)
 		return err

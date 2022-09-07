@@ -10,8 +10,11 @@ import (
 func TestConfigParsing(t *testing.T) {
 	require := require.New(t)
 	confDir := filepath.Join("..", "..", "testfiles")
-	parser := NewParser(confDir)
-	err := parser.ParseConfigs()
+	parser := NewParser()
+	err := parser.ParseConfigDirectories(confDir, confDir, "")
+	require.NoError(err)
+
+	err = parser.ParseConfigs()
 
 	require.Equal(4, len(parser.yamls))
 	require.NoError(err)
@@ -24,8 +27,11 @@ func TestConfigParsing(t *testing.T) {
 func TestParseDataPaths(t *testing.T) {
 	require := require.New(t)
 	confDir := filepath.Join("..", "..", "testfiles")
-	parser := NewParser(confDir)
-	err := parser.ParseConfigs()
+	parser := NewParser()
+	err := parser.ParseConfigDirectories(confDir, confDir, "")
+	require.NoError(err)
+
+	err = parser.ParseConfigs()
 	require.NoError(err)
 
 	dataDirs, additionalDirs, err := parseDataPaths(parser.CassYaml())
@@ -35,3 +41,8 @@ func TestParseDataPaths(t *testing.T) {
 	require.Equal(1, len(additionalDirs))
 	require.Equal(1, len(dataDirs))
 }
+
+/*
+	TODO: Could configs be located in multiple directories?
+		  Especially the extra workload ones..
+*/

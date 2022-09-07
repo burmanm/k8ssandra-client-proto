@@ -44,6 +44,8 @@ type options struct {
 	namespace     string
 	nodetoolPath  string
 	cassandraHome string
+	dseConfigDir  string
+	cassConfigDir string
 	configDir     string
 
 	// Helm related
@@ -86,7 +88,8 @@ func NewInitCmd(streams genericclioptions.IOStreams) *cobra.Command {
 	fl := cmd.Flags()
 	fl.StringVarP(&o.nodetoolPath, "nodetool-path", "p", "", "path to nodetool executable directory")
 	fl.StringVarP(&o.cassandraHome, "cassandra-home", "c", "", "path to cassandra/DSE installation directory")
-	fl.StringVarP(&o.configDir, "config-dir", "f", "", "path to cassandra/DSE configuration directory")
+	fl.StringVarP(&o.cassConfigDir, "cass-config-dir", "c", "", "override cassandra.yaml configuration directory")
+	fl.StringVarP(&o.dseConfigDir, "dse-config-dir", "c", "", "override dse.yaml configuration directory")
 	o.configFlags.AddFlags(fl)
 	return cmd
 }
@@ -98,11 +101,6 @@ func (c *options) Complete(cmd *cobra.Command, args []string) error {
 	c.namespace, _, err = c.configFlags.ToRawKubeConfigLoader().Namespace()
 	if err != nil {
 		return err
-	}
-
-	// Create new namespace for this usage
-	if c.namespace == "default" || c.namespace == "" {
-		c.namespace = releaseName
 	}
 
 	actionConfig := new(action.Configuration)
@@ -122,12 +120,13 @@ func (c *options) Complete(cmd *cobra.Command, args []string) error {
 
 // Validate ensures that all required arguments and flag values are provided
 func (c *options) Validate() error {
-	if c.configDir == "" {
-		return fmt.Errorf("config-dir is required")
+	cassandraHome, nodetoolPath, err := migrate.DetectInstallation(c.cassandraHome, c.nodetoolPath)
+	if err != nil {
+		return err
 	}
-	// if c.cassandraHome == "" {
-	// 	return fmt.Errorf("cassandra-home is required")
-	// }
+	c.cassandraHome = cassandraHome
+	c.nodetoolPath = nodetoolPath
+
 	return nil
 }
 
@@ -160,9 +159,7 @@ func (c *options) Run() error {
 		return err
 	}
 
-	if c.nodetoolPath != "" {
-		migrator.NodetoolPath = c.nodetoolPath
-	}
+	// TODO All of this is in the install command already
 
 	spinnerLiveText.UpdateText("Installing cass-operator to the Kubernetes cluster")
 
