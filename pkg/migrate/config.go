@@ -161,20 +161,30 @@ func (c *ClusterMigrator) ParseConfigs(p *pterm.SpinnerPrinter) error {
 		return err
 	}
 
-	if len(confMap.Data) < 1 {
-		p.UpdateText("Parsing all Cassandra configuration files")
-		err = cfgParser.ParseConfigs()
-		if err != nil {
-			return err
+	if len(confMap.Data) > 0 {
+		for k, conf := range confMap.Data {
+			yamlFile := make(map[string]interface{})
+			if err := yaml.Unmarshal([]byte(conf), &yamlFile); err != nil {
+				return err
+			}
+			cfgParser.yamls[k] = yamlFile
 		}
 
-		p.UpdateText("Storing configs to Kubernetes")
-		_, err = c.storeConfigFiles(confMap, cfgParser.Yamls())
-		if err != nil {
-			return err
-		}
-		pterm.Success.Println("Parsed and stored Cassandra configuration files to Kubernetes")
+		return nil
 	}
+
+	p.UpdateText("Parsing all Cassandra configuration files")
+	err = cfgParser.ParseConfigs()
+	if err != nil {
+		return err
+	}
+
+	p.UpdateText("Storing configs to Kubernetes")
+	_, err = c.storeConfigFiles(confMap, cfgParser.Yamls())
+	if err != nil {
+		return err
+	}
+	pterm.Success.Println("Parsed and stored Cassandra configuration files to Kubernetes")
 
 	return nil
 }
