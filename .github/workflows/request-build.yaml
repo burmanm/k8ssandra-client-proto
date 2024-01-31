@@ -1,0 +1,19 @@
+name: Try the k8ssandra-client build process
+on:
+    workflow_dispatch:
+        inputs:
+            chartName:
+                description: 'Name of the chart to be embedded in the image'
+                required: true
+                type: string
+            targetVersion:
+                description: 'Target version to upgrade CRDs to'
+                required: true
+                type: string
+jobs:
+  comment:
+    runs-on: ubuntu-latest
+    steps:
+      - run: gh workflow run -R burmanm/k8ssandra-client -f targetVersion=${{ inputs.targetVersion }} -f repoName=k8ssandra -f repoURL=https://helm.k8ssandra.io/stable -f chartName=${{ inputs.chartName }}
+        env:
+          GH_TOKEN: ${{ secrets.CLIENT_PAT_TOKEN }}
